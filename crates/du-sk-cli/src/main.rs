@@ -6,14 +6,57 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+struct Preset {
+    key: &'static str,
+    label: &'static str,
+    path: PathBuf,
+}
+
+fn get_presets() -> Vec<Preset> {
+    let home = std::env::var("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("."));
+
+    vec![
+        Preset {
+            key: "home",
+            label: "Home Directory (~)",
+            path: home.clone(),
+        },
+        Preset {
+            key: "library",
+            label: "Library (~/Library)",
+            path: home.join("Library"),
+        },
+        Preset {
+            key: "downloads",
+            label: "Downloads (~/Downloads)",
+            path: home.join("Downloads"),
+        },
+        Preset {
+            key: "documents",
+            label: "Documents (~/Documents)",
+            path: home.join("Documents"),
+        },
+        Preset {
+            key: "desktop",
+            label: "Desktop (~/Desktop)",
+            path: home.join("Desktop"),
+        },
+    ]
+}
+
 fn format_bytes(bytes: u64) -> String {
     const KB: f64 = 1024.0;
     const MB: f64 = KB * 1024.0;
     const GB: f64 = MB * 1024.0;
+    const TB: f64 = GB * 1024.0;
 
     let b = bytes as f64;
-    if b >= GB {
-        format!("{:.1} GB", b / GB)
+    if b >= TB {
+        format!("{:.2} TB", b / TB)
+    } else if b >= GB {
+        format!("{:.2} GB", b / GB)
     } else if b >= MB {
         format!("{:.1} MB", b / MB)
     } else if b >= KB {
@@ -23,77 +66,264 @@ fn format_bytes(bytes: u64) -> String {
     }
 }
 
+fn format_number(val: u64) -> String {
+    let s = val.to_string();
+    let mut out = String::new();
+    let len = s.len();
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (len - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+fn render_bar(ratio: f64, width: usize) -> String {
+    let filled = ((ratio * width as f64).round() as usize).min(width);
+    let empty = width.saturating_sub(filled);
+    format!("{}{}", "■".repeat(filled), "·".repeat(empty))
+}
+
+fn print_help(presets: &[Preset]) {
+    println!("\x1b[1;38;5;208mdu-sk-cli\x1b[0m - Fast terminal disk space inspector\n");
+    println!("\x1b[1;37mUSAGE:\x1b[0m");
+    println!("  du-sk-cli [TARGET | PRESET] [--top <N>]\n");
+    println!("\x1b[1;37mPRESETS:\x1b[0m");
+    for p in presets {
+        println!(
+            "  \x1b[38;5;208m{:<12}\x1b[0m \x1b[38;5;244m{}\x1b[0m",
+            p.key,
+            p.path.display()
+        );
+    }
+    println!("\n\x1b[1;37mOPTIONS:\x1b[0m");
+    println!(
+        "  \x1b[38;5;208m-n, --top <N>\x1b[0m    Number of largest items to show (default: 15)"
+    );
+    println!("  \x1b[38;5;208m-p, --presets\x1b[0m    List available preset targets");
+    println!("  \x1b[38;5;208m-h, --help\x1b[0m       Show help information\n");
+}
+
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    let target = if args.len() > 1 {
-        PathBuf::from(&args[1])
+    let presets = get_presets();
+    let args: Vec<String> = env::args().skip(1).collect();
+
+    let mut target_str: Option<String> = None;
+    let mut top_limit: usize = 15;
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-h" | "--help" => {
+                print_help(&presets);
+                return;
+            }
+            "-p" | "--presets" => {
+                println!("\x1b[1;37mAvailable Presets:\x1b[0m\n");
+                for p in &presets {
+                    println!(
+                        "  \x1b[1;38;5;208m{:<10}\x1b[0m {:<22} \x1b[38;5;244m{}\x1b[0m",
+                        p.key,
+                        p.label,
+                        p.path.display()
+                    );
+                }
+                println!();
+                return;
+            }
+            "-n" | "--top" => {
+                if i + 1 < args.len() {
+                    if let Ok(val) = args[i + 1].parse::<usize>() {
+                        top_limit = val;
+                    }
+                    i += 1;
+                }
+            }
+            other => {
+                if !other.starts_with('-') && target_str.is_none() {
+                    target_str = Some(other.to_string());
+                }
+            }
+        }
+        i += 1;
+    }
+
+    let target_path = if let Some(target_input) = target_str {
+        if let Some(matched) = presets
+            .iter()
+            .find(|p| p.key.eq_ignore_ascii_case(&target_input))
+        {
+            matched.path.clone()
+        } else {
+            PathBuf::from(target_input)
+        }
     } else {
-        dirs_target()
+        presets
+            .iter()
+            .find(|p| p.key == "library")
+            .map(|p| p.path.clone())
+            .unwrap_or_else(|| PathBuf::from("."))
     };
 
-    println!("Target: {}", target.display());
+    if !target_path.exists() {
+        eprintln!(
+            "\x1b[1;31mError:\x1b[0m Target path does not exist: {}",
+            target_path.display()
+        );
+        std::process::exit(1);
+    }
+
+    println!("\x1b[2J\x1b[H\x1b[?25l");
+    println!("\x1b[1;38;5;208mdu-sk\x1b[0m \x1b[38;5;244m— disk space visualizer\x1b[0m");
+    println!(
+        "\x1b[38;5;240mTarget:\x1b[0m \x1b[1;37m{}\x1b[0m\n",
+        target_path.display()
+    );
 
     let cancel = Arc::new(AtomicBool::new(false));
     let progress = Arc::new(du_sk_core::ScanProgress::default());
 
-    let target_clone = target.clone();
+    let target_clone = target_path.clone();
     let cancel_clone = cancel.clone();
     let progress_clone = progress.clone();
 
     let start = Instant::now();
-
     let scan_handle = thread::spawn(move || {
         du_sk_core::scan_directory(&target_clone, cancel_clone, progress_clone)
     });
+
+    let spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    let mut frame = 0;
+    let mut started = false;
+
+    print!("\x1b[?7l");
 
     while !scan_handle.is_finished() {
         let files = progress.files_scanned.load(Ordering::Relaxed);
         let bytes = progress.bytes_scanned.load(Ordering::Relaxed);
         let errors = progress.errors_count.load(Ordering::Relaxed);
+        let current_path = progress.get_current_path();
         let elapsed = start.elapsed().as_secs_f64();
+        let spin_char = spinner[frame % spinner.len()];
+        frame += 1;
+
+        if started {
+            print!("\x1b[1A\r");
+        }
+        started = true;
 
         print!(
-            "\x1B[2K\rScanning... Files: {:>7} | Size: {:>9} | Errors: {} | Time: {:.1}s",
-            files,
+            "\x1b[2K \x1b[1;38;5;208m{}\x1b[0m  Scanning...  \x1b[1;37m{}\x1b[0m files  \x1b[38;5;240m|\x1b[0m  \x1b[1;38;5;208m{}\x1b[0m  \x1b[38;5;240m|\x1b[0m  \x1b[38;5;244m{:.1}s\x1b[0m",
+            spin_char,
+            format_number(files),
             format_bytes(bytes),
-            errors,
             elapsed
         );
-        let _ = io::stdout().flush();
 
-        thread::sleep(Duration::from_millis(100));
+        if errors > 0 {
+            print!("  \x1b[38;5;203m({} errors)\x1b[0m", errors);
+        }
+
+        print!(
+            "\n\x1b[2K  \x1b[38;5;240m↳\x1b[0m \x1b[38;5;244m{}\x1b[0m",
+            current_path
+        );
+
+        let _ = io::stdout().flush();
+        thread::sleep(Duration::from_millis(50));
     }
 
-    print!("\x1B[2K\r");
+    print!("\x1b[?7h");
+    if started {
+        print!("\r\x1b[2K\x1b[1A\r\x1b[2K\x1b[?25h");
+    } else {
+        print!("\r\x1b[2K\x1b[?25h");
+    }
     let _ = io::stdout().flush();
 
     match scan_handle.join().unwrap() {
         Ok(result) => {
             let duration = start.elapsed();
-            println!("--- Scan Finished in {:.2?} ---", duration);
-            println!("Total Size:  {}", format_bytes(result.total_bytes));
-            println!("Total Files: {}", result.total_files);
-            println!("Errors:      {}", result.unreadable_paths.len());
+            let total_size = result.total_bytes;
 
-            println!("\nTop largest items in {}:", target.display());
-            for child in result.root_node.children.iter().take(10) {
-                let kind = if child.is_dir { "DIR " } else { "FILE" };
+            println!("\x1b[1;38;5;208m┌─ Scan Overview ─────────────────────────────────────────────────────────────┐\x1b[0m");
+            println!(
+                "\x1b[1;38;5;208m│\x1b[0m Target:   \x1b[1;37m{:<66}\x1b[0m \x1b[1;38;5;208m│\x1b[0m",
+                target_path.display()
+            );
+            println!(
+                "\x1b[1;38;5;208m│\x1b[0m Total:    \x1b[1;38;5;208m{:<12}\x1b[0m  Files: \x1b[1;37m{:<12}\x1b[0m  Time: \x1b[38;5;244m{:<9.2?} \x1b[0m Errors: \x1b[38;5;{}m{:<5}\x1b[0m \x1b[1;38;5;208m│\x1b[0m",
+                format_bytes(total_size),
+                format_number(result.total_files),
+                duration,
+                if result.unreadable_paths.is_empty() { 244 } else { 203 },
+                result.unreadable_paths.len()
+            );
+            println!("\x1b[1;38;5;208m└─────────────────────────────────────────────────────────────────────────────┘\x1b[0m\n");
+
+            let max_name_width = 30;
+            println!(
+                " \x1b[38;5;240m{:<6} {:>10}  {:>6}   {:<16}  NAME\x1b[0m",
+                "KIND", "SIZE", "SHARE", "DISTRIBUTION"
+            );
+            println!(" \x1b[38;5;238m{}\x1b[0m", "─".repeat(77));
+
+            let visible_items: Vec<_> = result.root_node.children.iter().take(top_limit).collect();
+            let mut displayed_bytes = 0u64;
+
+            for item in &visible_items {
+                displayed_bytes += item.size;
+                let ratio = if total_size > 0 {
+                    item.size as f64 / total_size as f64
+                } else {
+                    0.0
+                };
+                let share_percent = ratio * 100.0;
+
+                let (tag, tag_style) = if item.is_dir {
+                    ("DIR ", "\x1b[38;5;208m")
+                } else {
+                    ("FILE", "\x1b[38;5;244m")
+                };
+
+                let name_truncated = if item.name.len() > max_name_width {
+                    format!("{}…", &item.name[..max_name_width - 1])
+                } else {
+                    item.name.to_string()
+                };
+
+                let bar = render_bar(ratio, 16);
+
                 println!(
-                    "  [{}] {:<10} {}",
-                    kind,
-                    format_bytes(child.size),
-                    child.name
+                    " {tag_style}[{tag}]\x1b[0m \x1b[1;37m{:>10}\x1b[0m  {:>5.1}%   \x1b[38;5;208m{}\x1b[0m  \x1b[1;37m{}\x1b[0m",
+                    format_bytes(item.size),
+                    share_percent,
+                    bar,
+                    name_truncated
                 );
             }
+
+            let remainder_count = result.root_node.children.len().saturating_sub(top_limit);
+            let remainder_bytes = total_size.saturating_sub(displayed_bytes);
+
+            if remainder_count > 0 && remainder_bytes > 0 {
+                let rem_ratio = remainder_bytes as f64 / total_size as f64;
+                let rem_bar = render_bar(rem_ratio, 16);
+                println!(
+                    " \x1b[38;5;242m[REST] {:>10}  {:>5.1}%   \x1b[38;5;242m{}\x1b[0m  {} other items\x1b[0m",
+                    format_bytes(remainder_bytes),
+                    rem_ratio * 100.0,
+                    rem_bar,
+                    format_number(remainder_count as u64)
+                );
+            }
+
+            println!(" \x1b[38;5;238m{}\x1b[0m\n", "─".repeat(77));
         }
         Err(e) => {
-            eprintln!("Scan failed: {}", e);
+            eprintln!("\n\x1b[1;31mScan failed:\x1b[0m {}\n", e);
+            std::process::exit(1);
         }
     }
-}
-
-fn dirs_target() -> PathBuf {
-    std::env::var("HOME")
-        .map(|h| PathBuf::from(h).join("Library"))
-        .unwrap_or_else(|_| PathBuf::from("."))
 }

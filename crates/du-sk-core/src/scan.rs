@@ -27,6 +27,7 @@ pub struct ScanProgress {
     pub bytes_scanned: AtomicU64,
     pub errors_count: AtomicU64,
     pub buckets: Mutex<Vec<Arc<TopLevelBucket>>>,
+    pub current_path: Mutex<String>,
 }
 
 impl ScanProgress {
@@ -41,6 +42,21 @@ impl ScanProgress {
                 .collect()
         } else {
             Vec::new()
+        }
+    }
+
+    pub fn set_current_path(&self, full_path: &str) {
+        if let Ok(mut lock) = self.current_path.try_lock() {
+            lock.clear();
+            lock.push_str(full_path);
+        }
+    }
+
+    pub fn get_current_path(&self) -> String {
+        if let Ok(lock) = self.current_path.lock() {
+            lock.clone()
+        } else {
+            String::new()
         }
     }
 }
@@ -166,6 +182,7 @@ pub fn scan_directory(
             }
 
             let file_name = entry.file_name().to_string_lossy().to_string();
+            ctx.progress.set_current_path(&path.to_string_lossy());
 
             if meta.is_dir() {
                 let node = scan_dir_recursive(&path, &file_name, &ctx, Some(&bucket));
@@ -280,6 +297,7 @@ fn scan_dir_recursive(
             }
 
             let file_name = entry.file_name().to_string_lossy().to_string();
+            ctx.progress.set_current_path(&path.to_string_lossy());
 
             if meta.is_dir() {
                 Some(scan_dir_recursive(&path, &file_name, ctx, parent_bucket))
