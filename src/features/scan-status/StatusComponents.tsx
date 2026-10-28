@@ -5,48 +5,71 @@ import { ProgressPayload } from "../../types";
 export const ProgressStrip: React.FC<{ progress: ProgressPayload | null }> = ({
   progress,
 }) => {
-  if (!progress) {
-    return (
-      <div style={{ padding: "8px 16px", background: "#1f1f23", fontSize: "12px", color: "#9ca3af" }}>
-        Starting scan…
-      </div>
-    );
-  }
-
   return (
     <div
       style={{
         background: "#18181b",
         borderBottom: "1px solid #27272a",
-        padding: "6px 16px",
-        fontSize: "12px",
-        color: "#d4d4d8",
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
+        position: "relative",
+        overflow: "hidden",
       }}
     >
-      <div style={{ display: "flex", gap: "16px" }}>
-        <span>Files: <strong>{progress.files.toLocaleString()}</strong></span>
-        <span>Size: <strong>{formatBytes(progress.bytes)}</strong></span>
-        <span>Time: <strong>{progress.elapsed_secs.toFixed(1)}s</strong></span>
-        {progress.errors > 0 && (
-          <span style={{ color: "#f87171" }}>
-            Errors: <strong>{progress.errors}</strong>
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: "2px",
+          background: "linear-gradient(90deg, transparent, #3b82f6, transparent)",
+          animation: "progress-indeterminate 1.5s infinite ease-in-out",
+        }}
+      />
+      <div
+        style={{
+          padding: "6px 16px",
+          fontSize: "12px",
+          color: "#d4d4d8",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
+        <div style={{ display: "flex", gap: "16px" }}>
+          <span>
+            Files: <strong>{progress ? progress.files.toLocaleString() : 0}</strong>
           </span>
-        )}
+          <span>
+            Size: <strong>{formatBytes(progress ? progress.bytes : 0)}</strong>
+          </span>
+          <span>
+            Time: <strong>{progress ? progress.elapsed_secs.toFixed(1) : "0.0"}s</strong>
+          </span>
+          {progress && progress.errors > 0 && (
+            <span style={{ color: "#f87171" }}>
+              Errors: <strong>{progress.errors}</strong>
+            </span>
+          )}
+        </div>
+        <div style={{ color: "#a1a1aa", fontStyle: "italic" }}>Scanning in progress…</div>
       </div>
-      <div style={{ color: "#a1a1aa", fontStyle: "italic" }}>Scanning in progress…</div>
+      <style>{`
+        @keyframes progress-indeterminate {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+        }
+      `}</style>
     </div>
   );
 };
 
-export const WarningBanner: React.FC<{ unreadablePaths: string[] }> = ({
-  unreadablePaths,
-}) => {
+export const WarningBanner: React.FC<{
+  errorCount: number;
+  unreadablePaths: string[];
+}> = ({ errorCount, unreadablePaths }) => {
   const [expanded, setExpanded] = useState(false);
 
-  if (unreadablePaths.length === 0) return null;
+  if (errorCount === 0) return null;
 
   return (
     <div
@@ -60,26 +83,28 @@ export const WarningBanner: React.FC<{ unreadablePaths: string[] }> = ({
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <span>
-          ⚠️ <strong>{unreadablePaths.length} items</strong> could not be read. Totals are incomplete.
-          Grant <em>Full Disk Access</em> in macOS System Settings → Privacy & Security.
+          ⚠️ <strong>{errorCount} items</strong> could not be read. Totals are incomplete.
+          Grant Full Disk Access in macOS System Settings → Privacy & Security.
         </span>
-        <button
-          onClick={() => setExpanded(!expanded)}
-          style={{
-            background: "rgba(255, 255, 255, 0.1)",
-            border: "none",
-            color: "#fff",
-            padding: "2px 8px",
-            borderRadius: "4px",
-            fontSize: "11px",
-            cursor: "pointer",
-          }}
-        >
-          {expanded ? "Hide paths" : "View paths"}
-        </button>
+        {unreadablePaths.length > 0 && (
+          <button
+            onClick={() => setExpanded(!expanded)}
+            style={{
+              background: "rgba(255, 255, 255, 0.1)",
+              border: "none",
+              color: "#fff",
+              padding: "2px 8px",
+              borderRadius: "4px",
+              fontSize: "11px",
+              cursor: "pointer",
+            }}
+          >
+            {expanded ? "Hide paths" : `View paths (${unreadablePaths.length})`}
+          </button>
+        )}
       </div>
 
-      {expanded && (
+      {expanded && unreadablePaths.length > 0 && (
         <div
           style={{
             marginTop: "8px",

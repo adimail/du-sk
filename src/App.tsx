@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -14,6 +14,7 @@ import {
   WarningBanner,
   StatusBar,
 } from "./features/scan-status/StatusComponents";
+import { getStableHue } from "./lib/utils";
 import "./App.css";
 
 function App() {
@@ -24,8 +25,8 @@ function App() {
   const [totalFiles, setTotalFiles] = useState(0);
   const [duration, setDuration] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const initialScanRef = useRef(false);
 
-  // Setup Tauri Event Listeners
   useEffect(() => {
     const unlistenProgress = listen<ProgressPayload>("scan-progress", (event) => {
       setProgress(event.payload);
@@ -52,8 +53,10 @@ function App() {
       setProgress(null);
     });
 
-    // Auto-scan on startup (A1)
-    handleStartScan();
+    if (!initialScanRef.current) {
+      initialScanRef.current = true;
+      handleStartScan();
+    }
 
     return () => {
       unlistenProgress.then((f) => f());
@@ -63,6 +66,23 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (
+        e.key === "Backspace" &&
+        currentView &&
+        currentView.current_path.length > 1 &&
+        status !== "scanning"
+      ) {
+        const targetIndex = currentView.current_path.length - 2;
+        handleNavigateBreadcrumb(targetIndex);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [currentView, status]);
+
   async function handleStartScan(targetPath?: string) {
     setStatus("scanning");
     setErrorMessage(null);
@@ -70,8 +90,12 @@ function App() {
     try {
       await invoke("start_scan", { targetPath: targetPath || null });
     } catch (err) {
+      const msg = String(err);
+      if (msg.includes("already in progress")) {
+        return;
+      }
       setStatus("error");
-      setErrorMessage(String(err));
+      setErrorMessage(msg);
     }
   }
 
@@ -105,9 +129,18 @@ function App() {
     }
   }
 
+  const baseHue =
+    currentView && currentView.current_path.length > 1
+      ? getStableHue(currentView.current_path[1])
+      : undefined;
+
+  const currentErrorsCount =
+    status === "scanning" && progress
+      ? progress.errors
+      : unreadablePaths.length;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
-      {/* 1. Header Strip */}
       <header
         style={{
           height: "44px",
@@ -169,13 +202,13 @@ function App() {
         </div>
       </header>
 
-      {/* 2. Scanning Progress Strip */}
       {status === "scanning" && <ProgressStrip progress={progress} />}
 
-      {/* 3. Incomplete Permission Warning Banner */}
-      <WarningBanner unreadablePaths={unreadablePaths} />
+      <WarningBanner
+        errorCount={currentErrorsCount}
+        unreadablePaths={unreadablePaths}
+      />
 
-      {/* 4. Main Treemap Area */}
       <main style={{ flex: 1, position: "relative" }}>
         {status === "error" ? (
           <div
@@ -236,6 +269,7 @@ function App() {
             totalSize={currentView.total_size}
             onDrillDown={handleDrillDown}
             canDrill={status === "complete"}
+            baseHue={baseHue}
           />
         ) : (
           <div
@@ -252,7 +286,6 @@ function App() {
         )}
       </main>
 
-      {/* 5. Bottom Status Strip */}
       {currentView && (
         <StatusBar
           totalBytes={currentView.total_size}

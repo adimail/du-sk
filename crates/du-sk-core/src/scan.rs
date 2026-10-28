@@ -76,6 +76,10 @@ pub fn scan_directory(
 fn scan_dir_recursive(dir_path: &Path, name: &str, ctx: &Arc<ScanContext>) -> FileNode {
     let mut node = FileNode::new_dir(name);
 
+    if let Ok(meta) = fs::symlink_metadata(dir_path) {
+        node.size = meta.blocks() * 512;
+    }
+
     if ctx.cancel_token.load(Ordering::Relaxed) {
         return node;
     }

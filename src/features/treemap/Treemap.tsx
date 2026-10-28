@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect, useMemo } from "react";
 import * as d3 from "d3-hierarchy";
 import type { HierarchyRectangularNode } from "d3-hierarchy";
 import { TileItem } from "../../types";
-import { formatBytes, getTileColor } from "../../lib/utils";
+import { formatBytes, getTileColor, truncateText } from "../../lib/utils";
 import { Tooltip } from "./Tooltip";
 
 interface TreemapProps {
@@ -10,6 +10,7 @@ interface TreemapProps {
   totalSize: number;
   onDrillDown: (folderName: string) => void;
   canDrill: boolean;
+  baseHue?: number;
 }
 
 interface HoverState {
@@ -24,6 +25,7 @@ export const Treemap: React.FC<TreemapProps> = ({
   totalSize,
   onDrillDown,
   canDrill,
+  baseHue,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
@@ -41,7 +43,6 @@ export const Treemap: React.FC<TreemapProps> = ({
     return () => observer.disconnect();
   }, []);
 
-  // Compute D3 Squarified Treemap layout typed as HierarchyRectangularNode
   const layout = useMemo((): HierarchyRectangularNode<TileItem>[] => {
     if (dimensions.width === 0 || dimensions.height === 0 || tiles.length === 0) {
       return [];
@@ -72,6 +73,25 @@ export const Treemap: React.FC<TreemapProps> = ({
     return (laidOutRoot.children || []) as HierarchyRectangularNode<TileItem>[];
   }, [tiles, totalSize, dimensions]);
 
+  if (tiles.length === 0) {
+    return (
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#71717a",
+          fontSize: "14px",
+          backgroundColor: "#121214",
+        }}
+      >
+        This folder is empty
+      </div>
+    );
+  }
+
   return (
     <div
       ref={containerRef}
@@ -96,19 +116,57 @@ export const Treemap: React.FC<TreemapProps> = ({
 
           if (w <= 0 || h <= 0) return null;
 
-          const color = getTileColor(item.name, 0, item.is_aggregate);
-
-          // FR-4: Label only shown if tile is at least 48px wide and 18px tall
+          const color = getTileColor(item.name, 0, item.is_aggregate, baseHue);
           const showLabel = w >= 48 && h >= 18;
           const isClickable = canDrill && item.is_dir && !item.is_aggregate;
+
+          const hasSubChildren = item.children && item.children.length > 0;
+          const canRenderSubTreemap = hasSubChildren && w >= 90 && h >= 60;
+          const headerHeight = canRenderSubTreemap ? 24 : 0;
+
+          let subLayout: HierarchyRectangularNode<TileItem>[] = [];
+          if (canRenderSubTreemap) {
+            const subRootData: TileItem = {
+              name: item.name,
+              size: item.size,
+              is_dir: true,
+              incomplete: false,
+              is_aggregate: false,
+              aggregate_count: 0,
+              children: item.children,
+            };
+
+            const subRoot = d3
+              .hierarchy<TileItem>(subRootData)
+              .sum((d) => d.size)
+              .sort((a, b) => (b.value || 0) - (a.value || 0));
+
+            const subTreemap = d3
+              .treemap<TileItem>()
+              .size([w - 4, h - headerHeight - 4])
+              .paddingInner(1)
+              .round(true);
+
+            const laidOutSub = subTreemap(subRoot);
+            subLayout = (laidOutSub.children || []) as HierarchyRectangularNode<TileItem>[];
+          }
 
           return (
             <g
               key={`${item.name}-${i}`}
               transform={`translate(${node.x0}, ${node.y0})`}
-              style={{ cursor: isClickable ? "pointer" : "default" }}
+              tabIndex={isClickable ? 0 : -1}
+              style={{
+                cursor: isClickable ? "pointer" : "default",
+                outline: "none",
+              }}
               onClick={() => {
                 if (isClickable) onDrillDown(item.name);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && isClickable) {
+                  onDrillDown(item.name);
+                }
               }}
               onMouseMove={(e) => {
                 setHover({
@@ -119,7 +177,6 @@ export const Treemap: React.FC<TreemapProps> = ({
                 });
               }}
             >
-              {/* Tile rectangle */}
               <rect
                 width={w}
                 height={h}
@@ -129,7 +186,6 @@ export const Treemap: React.FC<TreemapProps> = ({
                 rx={2}
               />
 
-              {/* Incomplete indicator marker */}
               {item.incomplete && w >= 24 && h >= 24 && (
                 <text
                   x={w - 14}
@@ -142,22 +198,17 @@ export const Treemap: React.FC<TreemapProps> = ({
                 </text>
               )}
 
-              {/* Tile label (Name and Size) */}
               {showLabel && (
                 <g transform="translate(6, 14)">
                   <text
                     fontSize={11}
                     fontWeight={600}
                     fill="#ffffff"
-                    style={{
-                      userSelect: "none",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    }}
+                    style={{ userSelect: "none" }}
                   >
-                    {item.name}
+                    {truncateText(item.name, w - (item.incomplete ? 28 : 12))}
                   </text>
-                  {h >= 32 && (
+                  {h >= 32 && !canRenderSubTreemap && (
                     <text
                       y={14}
                       fontSize={10}
@@ -169,12 +220,62 @@ export const Treemap: React.FC<TreemapProps> = ({
                   )}
                 </g>
               )}
+
+              {canRenderSubTreemap && (
+                <g transform={`translate(2, ${headerHeight + 2})`}>
+                  {subLayout.map((subNode, subIdx) => {
+                    const subItem = subNode.data;
+                    const sw = subNode.x1 - subNode.x0;
+                    const sh = subNode.y1 - subNode.y0;
+
+                    if (sw <= 0 || sh <= 0) return null;
+
+                    const subColor = getTileColor(subItem.name, 1, subItem.is_aggregate, color.hue);
+                    const showSubLabel = sw >= 40 && sh >= 16;
+
+                    return (
+                      <g
+                        key={`sub-${subItem.name}-${subIdx}`}
+                        transform={`translate(${subNode.x0}, ${subNode.y0})`}
+                        onMouseMove={(e) => {
+                          e.stopPropagation();
+                          setHover({
+                            item: subItem,
+                            parentSize: item.size,
+                            x: e.clientX,
+                            y: e.clientY,
+                          });
+                        }}
+                      >
+                        <rect
+                          width={sw}
+                          height={sh}
+                          fill={subColor.bg}
+                          stroke={subColor.border}
+                          strokeWidth={1}
+                          rx={1}
+                        />
+                        {showSubLabel && (
+                          <text
+                            x={4}
+                            y={11}
+                            fontSize={9}
+                            fill="rgba(255, 255, 255, 0.9)"
+                            style={{ userSelect: "none" }}
+                          >
+                            {truncateText(subItem.name, sw - 8)}
+                          </text>
+                        )}
+                      </g>
+                    );
+                  })}
+                </g>
+              )}
             </g>
           );
         })}
       </svg>
 
-      {/* Floating Tooltip */}
       {hover && (
         <Tooltip
           item={hover.item}
