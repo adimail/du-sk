@@ -15,11 +15,18 @@ export interface FolderViewResponse {
   tiles: TileItem[];
 }
 
+export interface LiveBucket {
+  name: string;
+  size: number;
+  is_dir: boolean;
+}
+
 export interface ProgressPayload {
   files: number;
   bytes: number;
   errors: number;
   elapsed_secs: number;
+  live_tiles: LiveBucket[];
 }
 
 export interface ScanCompletePayload {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -6,6 +6,7 @@ import {
   ProgressPayload,
   ScanCompletePayload,
   ScanStatus,
+  TileItem,
 } from "./types";
 import { Treemap } from "./features/treemap/Treemap";
 import { Breadcrumb } from "./features/breadcrumb/Breadcrumb";
@@ -119,12 +120,33 @@ function App() {
     }
   }
 
+  const liveTiles = useMemo((): TileItem[] => {
+    if (status !== "scanning" || !progress?.live_tiles) return [];
+    return progress.live_tiles.map((b) => ({
+      name: b.name,
+      size: b.size,
+      is_dir: b.is_dir,
+      incomplete: false,
+      is_aggregate: false,
+      aggregate_count: 0,
+      children: [],
+    }));
+  }, [status, progress]);
+
+  const activeTiles = status === "scanning" && liveTiles.length > 0
+    ? liveTiles
+    : currentView?.tiles || [];
+
+  const activeTotal = status === "scanning"
+    ? (progress ? progress.bytes : 0)
+    : (currentView ? currentView.total_size : 0);
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#0f0f11" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#0e0e11" }}>
       <header
         style={{
           height: "48px",
-          background: "#131316",
+          background: "#131317",
           borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
           display: "flex",
           alignItems: "center",
@@ -242,12 +264,13 @@ function App() {
               Start Scan
             </button>
           </div>
-        ) : currentView ? (
+        ) : activeTiles.length > 0 ? (
           <Treemap
-            tiles={currentView.tiles}
-            totalSize={currentView.total_size}
+            tiles={activeTiles}
+            totalSize={activeTotal}
             onDrillDown={handleDrillDown}
             canDrill={status === "complete"}
+            isScanning={status === "scanning"}
           />
         ) : (
           <div

@@ -10,6 +10,7 @@ interface TreemapProps {
   totalSize: number;
   onDrillDown: (folderName: string) => void;
   canDrill: boolean;
+  isScanning?: boolean;
 }
 
 interface HoverState {
@@ -24,6 +25,7 @@ export const Treemap: React.FC<TreemapProps> = ({
   totalSize,
   onDrillDown,
   canDrill,
+  isScanning = false,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
@@ -46,9 +48,14 @@ export const Treemap: React.FC<TreemapProps> = ({
       return [];
     }
 
+    const effectiveTotal = Math.max(
+      totalSize,
+      tiles.reduce((acc, t) => acc + t.size, 0)
+    );
+
     const rootData: TileItem = {
       name: "root",
-      size: totalSize,
+      size: effectiveTotal,
       is_dir: true,
       incomplete: false,
       is_aggregate: false,
@@ -58,13 +65,13 @@ export const Treemap: React.FC<TreemapProps> = ({
 
     const root = d3
       .hierarchy<TileItem>(rootData)
-      .sum((d) => (d.children && d.children.length > 0 ? 0 : d.size))
+      .sum((d) => (d.children && d.children.length > 0 ? 0 : Math.max(d.size, 1)))
       .sort((a, b) => (b.value || 0) - (a.value || 0));
 
     const treemap = d3
       .treemap<TileItem>()
       .size([dimensions.width, dimensions.height])
-      .paddingInner(3)
+      .paddingInner(4)
       .round(true);
 
     const laidOutRoot = treemap(root);
@@ -82,8 +89,8 @@ export const Treemap: React.FC<TreemapProps> = ({
           justifyContent: "center",
           color: "#71717a",
           fontSize: "13px",
-          backgroundColor: "#131316",
-          borderRadius: "14px",
+          backgroundColor: "#0e0e11",
+          borderRadius: "12px",
           border: "1px solid rgba(255, 255, 255, 0.05)",
         }}
       >
@@ -100,9 +107,8 @@ export const Treemap: React.FC<TreemapProps> = ({
         height: "100%",
         position: "relative",
         overflow: "hidden",
-        backgroundColor: "#131316",
-        borderRadius: "14px",
-        border: "1px solid rgba(255, 255, 255, 0.05)",
+        backgroundColor: "#0e0e11",
+        borderRadius: "12px",
       }}
       onMouseLeave={() => setHover(null)}
     >
@@ -113,18 +119,23 @@ export const Treemap: React.FC<TreemapProps> = ({
       >
         {layout.map((node, i) => {
           const item = node.data;
-          const w = node.x1 - node.x0;
-          const h = node.y1 - node.y0;
+          const w = Math.max(0, node.x1 - node.x0);
+          const h = Math.max(0, node.y1 - node.y0);
 
           if (w <= 0 || h <= 0) return null;
 
           const color = getTileColor(item.name, 0, item.is_aggregate);
-          const showLabel = w >= 44 && h >= 20;
           const isClickable = canDrill && item.is_dir && !item.is_aggregate;
 
           const hasSubChildren = item.children && item.children.length > 0;
-          const canRenderSubTreemap = hasSubChildren && w >= 80 && h >= 56;
-          const headerHeight = canRenderSubTreemap ? 24 : 0;
+          const canRenderSubTreemap = !isScanning && hasSubChildren && w >= 90 && h >= 68;
+          const headerHeight = h >= 32 && w >= 60 ? 28 : 0;
+
+          const showHeader = w >= 50 && h >= 22;
+          const showBadge = w >= 130 && h >= 28;
+          const sizeString = formatBytes(item.size);
+          const badgeWidth = sizeString.length * 7 + 14;
+          const titleMaxWidth = showBadge ? w - badgeWidth - 20 : w - 16;
 
           let subLayout: HierarchyRectangularNode<TileItem>[] = [];
           if (canRenderSubTreemap) {
@@ -145,7 +156,7 @@ export const Treemap: React.FC<TreemapProps> = ({
 
             const subTreemap = d3
               .treemap<TileItem>()
-              .size([w - 6, h - headerHeight - 6])
+              .size([w - 8, h - headerHeight - 8])
               .paddingInner(2)
               .round(true);
 
@@ -161,6 +172,7 @@ export const Treemap: React.FC<TreemapProps> = ({
               style={{
                 cursor: isClickable ? "pointer" : "default",
                 outline: "none",
+                transition: "transform 0.2s ease-out",
               }}
               onClick={() => {
                 if (isClickable) onDrillDown(item.name);
@@ -186,37 +198,67 @@ export const Treemap: React.FC<TreemapProps> = ({
                 stroke={color.border}
                 strokeWidth={1}
                 rx={6}
+                style={{
+                  transition: "width 0.2s ease-out, height 0.2s ease-out",
+                }}
               />
 
-              {showLabel && (
-                <g transform="translate(8, 16)">
+              {showHeader && (
+                <g transform="translate(8, 6)">
                   <text
+                    y={13}
                     fontSize={11}
-                    fontWeight={500}
+                    fontWeight={600}
                     fill={color.text}
                     style={{ userSelect: "none" }}
                   >
-                    {truncateText(item.name, w - 16)}
+                    {truncateText(item.name, titleMaxWidth)}
                   </text>
-                  {h >= 34 && !canRenderSubTreemap && (
+
+                  {showBadge && (
+                    <g transform={`translate(${w - badgeWidth - 16}, 1)`}>
+                      <rect
+                        width={badgeWidth}
+                        height={16}
+                        fill={color.badgeBg}
+                        stroke={color.badgeBorder}
+                        strokeWidth={1}
+                        rx={8}
+                      />
+                      <text
+                        x={badgeWidth / 2}
+                        y={11}
+                        fontSize={9}
+                        fontWeight={600}
+                        fill={color.badgeText}
+                        textAnchor="middle"
+                        style={{ userSelect: "none" }}
+                      >
+                        {sizeString}
+                      </text>
+                    </g>
+                  )}
+
+                  {!showBadge && h >= 40 && !canRenderSubTreemap && (
                     <text
-                      y={13}
+                      y={26}
                       fontSize={10}
-                      fill={color.subtext}
+                      fontWeight={500}
+                      fill={color.badgeText}
                       style={{ userSelect: "none" }}
                     >
-                      {formatBytes(item.size)}
+                      {sizeString}
                     </text>
                   )}
                 </g>
               )}
 
               {canRenderSubTreemap && (
-                <g transform={`translate(3, ${headerHeight + 3})`}>
+                <g transform={`translate(4, ${headerHeight + 4})`}>
                   {subLayout.map((subNode, subIdx) => {
                     const subItem = subNode.data;
-                    const sw = subNode.x1 - subNode.x0;
-                    const sh = subNode.y1 - subNode.y0;
+                    const sw = Math.max(0, subNode.x1 - subNode.x0);
+                    const sh = Math.max(0, subNode.y1 - subNode.y0);
 
                     if (sw <= 0 || sh <= 0) return null;
 
@@ -227,6 +269,9 @@ export const Treemap: React.FC<TreemapProps> = ({
                       <g
                         key={`sub-${subItem.name}-${subIdx}`}
                         transform={`translate(${subNode.x0}, ${subNode.y0})`}
+                        style={{
+                          transition: "transform 0.2s ease-out",
+                        }}
                         onMouseMove={(e) => {
                           e.stopPropagation();
                           setHover({
@@ -243,13 +288,17 @@ export const Treemap: React.FC<TreemapProps> = ({
                           fill={subColor.bg}
                           stroke={subColor.border}
                           strokeWidth={1}
-                          rx={4}
+                          rx={3}
+                          style={{
+                            transition: "width 0.2s ease-out, height 0.2s ease-out",
+                          }}
                         />
                         {showSubLabel && (
                           <text
                             x={4}
                             y={11}
                             fontSize={9}
+                            fontWeight={500}
                             fill="#d4d4d8"
                             style={{ userSelect: "none" }}
                           >

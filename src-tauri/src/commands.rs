@@ -1,5 +1,5 @@
 use crate::state::AppState;
-use du_sk_core::{FolderViewResponse, ScanProgress, scan_directory};
+use du_sk_core::{FolderViewResponse, LiveBucketSnapshot, ScanProgress, scan_directory};
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -14,6 +14,7 @@ pub struct ProgressPayload {
     pub bytes: u64,
     pub errors: u64,
     pub elapsed_secs: f64,
+    pub live_tiles: Vec<LiveBucketSnapshot>,
 }
 
 #[derive(Clone, Serialize)]
@@ -98,6 +99,7 @@ pub fn start_scan(
             let bytes = progress.bytes_scanned.load(Ordering::Relaxed);
             let errors = progress.errors_count.load(Ordering::Relaxed);
             let elapsed_secs = start.elapsed().as_secs_f64();
+            let live_tiles = progress.snapshot_buckets();
 
             let _ = app.emit(
                 "scan-progress",
@@ -106,10 +108,11 @@ pub fn start_scan(
                     bytes,
                     errors,
                     elapsed_secs,
+                    live_tiles,
                 },
             );
 
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(Duration::from_millis(200));
         }
 
         is_scanning_flag.store(false, Ordering::Relaxed);
@@ -125,7 +128,7 @@ pub fn start_scan(
                 let unreadable_strings: Vec<String> = result
                     .unreadable_paths
                     .iter()
-                    .take(100) // First 100 as per A15
+                    .take(100)
                     .map(|p| p.to_string_lossy().to_string())
                     .collect();
 

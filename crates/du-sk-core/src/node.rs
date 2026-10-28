@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::cmp::Reverse;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileNode {
@@ -50,12 +51,11 @@ impl FileNode {
         self.size
     }
 
-    /// Sort children by size descending (largest first) recursively.
     pub fn sort_by_size_desc(&mut self) {
         if !self.is_dir {
             return;
         }
-        self.children.sort_by(|a, b| b.size.cmp(&a.size));
+        self.children.sort_by_key(|a| Reverse(a.size));
         for child in &mut self.children {
             child.sort_by_size_desc();
         }

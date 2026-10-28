@@ -20,13 +20,22 @@ export function getTileColor(
   name: string,
   depth: number,
   isAggregate: boolean
-): { bg: string; border: string; text: string; subtext: string } {
+): {
+  bg: string;
+  border: string;
+  text: string;
+  badgeText: string;
+  badgeBg: string;
+  badgeBorder: string;
+} {
   if (isAggregate) {
     return {
-      bg: "#161619",
-      border: "#232328",
+      bg: "#131316",
+      border: "rgba(255, 255, 255, 0.06)",
       text: "#71717a",
-      subtext: "#52525b",
+      badgeText: "#71717a",
+      badgeBg: "rgba(255, 255, 255, 0.04)",
+      badgeBorder: "rgba(255, 255, 255, 0.06)",
     };
   }
 
@@ -36,25 +45,42 @@ export function getTileColor(
     hash |= 0;
   }
   const posHash = Math.abs(hash);
-  const hue = 22 + (posHash % 16);
+
+  const graphiteShades = [
+    "#16161b",
+    "#18181f",
+    "#1b1b23",
+    "#171921",
+    "#1d1c24",
+    "#161820",
+    "#1a1922",
+  ];
 
   if (depth === 0) {
-    const lightness = 13 + (posHash % 6);
-    const saturation = 16 + (posHash % 10);
+    const bg = graphiteShades[posHash % graphiteShades.length];
     return {
-      bg: `hsl(${hue}, ${saturation}%, ${lightness}%)`,
-      border: `hsla(${hue}, 38%, 32%, 0.45)`,
-      text: "#f4f4f5",
-      subtext: "#fdba74",
+      bg,
+      border: "rgba(255, 255, 255, 0.09)",
+      text: "#ffffff",
+      badgeText: "#fb923c",
+      badgeBg: "rgba(251, 146, 60, 0.12)",
+      badgeBorder: "rgba(251, 146, 60, 0.22)",
     };
   }
 
-  const lightness = 9 + (posHash % 4);
-  const saturation = 12 + (posHash % 8);
+  const subShades = [
+    "#101014",
+    "#121217",
+    "#131319",
+    "#111218",
+  ];
+  const bg = subShades[posHash % subShades.length];
   return {
-    bg: `hsl(${hue}, ${saturation}%, ${lightness}%)`,
-    border: `hsla(${hue}, 30%, 24%, 0.35)`,
-    text: "#e4e4e7",
-    subtext: "#a1a1aa",
+    bg,
+    border: "rgba(255, 255, 255, 0.05)",
+    text: "#d4d4d8",
+    badgeText: "#a1a1aa",
+    badgeBg: "rgba(255, 255, 255, 0.04)",
+    badgeBorder: "rgba(255, 255, 255, 0.06)",
   };
 }
