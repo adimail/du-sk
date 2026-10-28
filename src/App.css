@@ -1,20 +1,27 @@
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+@import "tailwindcss";
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+  body, html, #root {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background-color: #0e0e11;
+    color: #f4f4f5;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+  }
 }
 
-body, html, #root {
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  background-color: #0e0e11;
-  color: #f4f4f5;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  user-select: none;
-  -webkit-font-smoothing: antialiased;
+@keyframes progress-strip {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 
-button {
-  font-family: inherit;
+.animate-progress {
+  animation: progress-strip 1.5s infinite ease-in-out;
 }

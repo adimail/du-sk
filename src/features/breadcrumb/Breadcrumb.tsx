@@ -12,44 +12,19 @@ export const Breadcrumb: React.FC<BreadcrumbProps> = ({
   disabled,
 }) => {
   return (
-    <nav
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "4px",
-        background: "rgba(255, 255, 255, 0.04)",
-        padding: "3px 8px",
-        borderRadius: "20px",
-        border: "1px solid rgba(255, 255, 255, 0.06)",
-      }}
-    >
+    <nav className="flex items-center gap-1 bg-white/5 py-1 px-2 rounded-full border border-white/5">
       {path.map((segment, index) => {
         const isLast = index === path.length - 1;
 
         return (
           <React.Fragment key={`${segment}-${index}`}>
             {index > 0 && (
-              <span
-                style={{
-                  color: "#52525b",
-                  fontSize: "11px",
-                  userSelect: "none",
-                }}
-              >
+              <span className="text-zinc-600 text-[11px] select-none">
                 /
               </span>
             )}
             {isLast ? (
-              <span
-                style={{
-                  color: "#f4f4f5",
-                  fontWeight: 500,
-                  fontSize: "12px",
-                  padding: "2px 6px",
-                  borderRadius: "12px",
-                  background: "rgba(255, 255, 255, 0.07)",
-                }}
-              >
+              <span className="text-zinc-100 font-medium text-xs py-0.5 px-1.5 rounded-full bg-white/10">
                 {segment}
               </span>
             ) : (
@@ -57,16 +32,7 @@ export const Breadcrumb: React.FC<BreadcrumbProps> = ({
                 type="button"
                 disabled={disabled}
                 onClick={() => onNavigate(index)}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  padding: "2px 6px",
-                  color: disabled ? "#52525b" : "#a1a1aa",
-                  cursor: disabled ? "default" : "pointer",
-                  borderRadius: "12px",
-                  fontSize: "12px",
-                  fontWeight: 400,
-                }}
+                className="bg-transparent border-none py-0.5 px-1.5 text-xs rounded-full transition-colors disabled:text-zinc-600 disabled:cursor-default text-zinc-400 hover:text-zinc-200 cursor-pointer"
               >
                 {segment}
               </button>

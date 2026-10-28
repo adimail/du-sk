@@ -6,55 +6,22 @@ export const ProgressStrip: React.FC<{ progress: ProgressPayload | null }> = ({
   progress,
 }) => {
   return (
-    <div
-      style={{
-        background: "#18181b",
-        borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
-        position: "relative",
-        overflow: "hidden",
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          right: 0,
-          height: "2px",
-          background:
-            "linear-gradient(90deg, transparent, #ea580c, #fb923c, transparent)",
-          animation: "progress-indeterminate 1.5s infinite ease-in-out",
-        }}
-      />
-      <div
-        style={{
-          padding: "6px 16px",
-          fontSize: "12px",
-          color: "#a1a1aa",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <div style={{ display: "flex", gap: "16px" }}>
+    <div className="bg-[#18181b] border-b border-white/5 relative overflow-hidden">
+      <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-orange-600 to-orange-400 animate-progress" />
+      <div className="py-1.5 px-4 text-xs text-zinc-400 flex justify-between items-center">
+        <div className="flex gap-4">
           <span>
-            Files: <strong style={{ color: "#f4f4f5" }}>{progress ? progress.files.toLocaleString() : 0}</strong>
+            Files: <strong className="text-zinc-100">{progress ? progress.files.toLocaleString() : 0}</strong>
           </span>
           <span>
-            Size: <strong style={{ color: "#f4f4f5" }}>{formatBytes(progress ? progress.bytes : 0)}</strong>
+            Size: <strong className="text-zinc-100">{formatBytes(progress ? progress.bytes : 0)}</strong>
           </span>
           <span>
-            Time: <strong style={{ color: "#f4f4f5" }}>{progress ? progress.elapsed_secs.toFixed(1) : "0.0"}s</strong>
+            Time: <strong className="text-zinc-100">{progress ? progress.elapsed_secs.toFixed(1) : "0.0"}s</strong>
           </span>
         </div>
-        <div style={{ color: "#71717a", fontSize: "11px" }}>Scanning directory…</div>
+        <div className="text-zinc-500 text-[11px]">Scanning directory…</div>
       </div>
-      <style>{`
-        @keyframes progress-indeterminate {
-          0% { transform: translateX(-100%); }
-          100% { transform: translateX(100%); }
-        }
-      `}</style>
     </div>
   );
 };
@@ -65,28 +32,16 @@ export const StatusBar: React.FC<{
   durationSecs: number;
 }> = ({ totalBytes, totalFiles, durationSecs }) => {
   return (
-    <footer
-      style={{
-        height: "36px",
-        background: "#131316",
-        borderTop: "1px solid rgba(255, 255, 255, 0.06)",
-        padding: "0 16px",
-        fontSize: "11px",
-        color: "#71717a",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-      }}
-    >
-      <div style={{ display: "flex", gap: "16px" }}>
+    <footer className="h-9 bg-[#131316] border-t border-white/5 px-4 text-[11px] text-zinc-500 flex items-center justify-between">
+      <div className="flex gap-4">
         <span>
-          Total: <strong style={{ color: "#e4e4e7" }}>{formatBytes(totalBytes)}</strong>
+          Total: <strong className="text-zinc-300">{formatBytes(totalBytes)}</strong>
         </span>
         <span>
-          Files: <strong style={{ color: "#e4e4e7" }}>{totalFiles.toLocaleString()}</strong>
+          Files: <strong className="text-zinc-300">{totalFiles.toLocaleString()}</strong>
         </span>
         <span>
-          Duration: <strong style={{ color: "#e4e4e7" }}>{durationSecs.toFixed(2)}s</strong>
+          Duration: <strong className="text-zinc-300">{durationSecs.toFixed(2)}s</strong>
         </span>
       </div>
     </footer>

@@ -43,3 +43,12 @@ export interface FolderPreset {
 }
 
 export type ScanStatus = "idle" | "scanning" | "complete" | "cancelled" | "error";
+
+export interface ScanState {
+  status: ScanStatus;
+  progress: ProgressPayload | null;
+  view: FolderViewResponse | null;
+  totalFiles: number;
+  duration: number;
+  error: string | null;
+}
