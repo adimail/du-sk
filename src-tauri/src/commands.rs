@@ -2,6 +2,7 @@ use crate::state::AppState;
 use du_sk_core::{FolderViewResponse, LiveBucketSnapshot, ScanProgress, scan_directory};
 use serde::Serialize;
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::thread;
@@ -26,6 +27,12 @@ pub struct ScanCompletePayload {
     pub root_view: FolderViewResponse,
 }
 
+#[derive(Clone, Serialize)]
+pub struct FolderPreset {
+    pub label: String,
+    pub path: String,
+}
+
 #[tauri::command]
 pub fn get_default_target() -> String {
     std::env::var("HOME")
@@ -36,6 +43,54 @@ pub fn get_default_target() -> String {
                 .to_string()
         })
         .unwrap_or_else(|_| ".".into())
+}
+
+#[tauri::command]
+pub fn get_folder_presets() -> Vec<FolderPreset> {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    let home_path = PathBuf::from(&home);
+    vec![
+        FolderPreset {
+            label: "Home (~)".into(),
+            path: home_path.to_string_lossy().to_string(),
+        },
+        FolderPreset {
+            label: "Library".into(),
+            path: home_path.join("Library").to_string_lossy().to_string(),
+        },
+        FolderPreset {
+            label: "Downloads".into(),
+            path: home_path.join("Downloads").to_string_lossy().to_string(),
+        },
+        FolderPreset {
+            label: "Documents".into(),
+            path: home_path.join("Documents").to_string_lossy().to_string(),
+        },
+        FolderPreset {
+            label: "Desktop".into(),
+            path: home_path.join("Desktop").to_string_lossy().to_string(),
+        },
+    ]
+}
+
+#[tauri::command]
+pub fn pick_folder() -> Result<Option<String>, String> {
+    let output = Command::new("osascript")
+        .arg("-e")
+        .arg("POSIX path of (choose folder with prompt \"Select folder to scan:\")")
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if output.status.success() {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(path))
+        }
+    } else {
+        Ok(None)
+    }
 }
 
 #[tauri::command]

@@ -37,4 +37,9 @@ export interface ScanCompletePayload {
   root_view: FolderViewResponse;
 }
 
+export interface FolderPreset {
+  label: string;
+  path: string;
+}
+
 export type ScanStatus = "idle" | "scanning" | "complete" | "cancelled" | "error";

@@ -10,6 +10,8 @@ pub fn run() {
         .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             commands::get_default_target,
+            commands::get_folder_presets,
+            commands::pick_folder,
             commands::start_scan,
             commands::cancel_scan,
             commands::get_folder_children,

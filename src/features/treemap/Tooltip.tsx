@@ -16,7 +16,7 @@ export const Tooltip: React.FC<TooltipProps> = ({ item, parentSize, x, y }) => {
   const shareText = share < 0.1 ? "<0.1%" : `${share.toFixed(1)}%`;
 
   const tooltipWidth = 220;
-  const tooltipHeight = 78;
+  const tooltipHeight = item.incomplete ? 96 : 78;
   const padding = 14;
 
   let left = x + padding;
@@ -40,7 +40,7 @@ export const Tooltip: React.FC<TooltipProps> = ({ item, parentSize, x, y }) => {
         zIndex: 9999,
         background: "rgba(24, 24, 27, 0.94)",
         backdropFilter: "blur(12px)",
-        border: "1px solid rgba(249, 115, 22, 0.2)",
+        border: "1px solid rgba(255, 255, 255, 0.1)",
         borderRadius: "10px",
         padding: "10px 14px",
         boxShadow: "0 12px 32px rgba(0, 0, 0, 0.6)",
@@ -70,7 +70,7 @@ export const Tooltip: React.FC<TooltipProps> = ({ item, parentSize, x, y }) => {
         }}
       >
         <span>Size</span>
-        <span style={{ color: "#fdba74", fontWeight: 500 }}>
+        <span style={{ color: "#fb923c", fontWeight: 500 }}>
           {formatBytes(item.size)}
         </span>
       </div>
@@ -85,6 +85,21 @@ export const Tooltip: React.FC<TooltipProps> = ({ item, parentSize, x, y }) => {
         <span>Share</span>
         <span style={{ color: "#f4f4f5", fontWeight: 500 }}>{shareText}</span>
       </div>
+
+      {item.incomplete && (
+        <div
+          style={{
+            marginTop: "6px",
+            paddingTop: "6px",
+            borderTop: "1px solid rgba(255, 255, 255, 0.08)",
+            color: "#fb923c",
+            fontSize: "10px",
+            fontWeight: 500,
+          }}
+        >
+          Contains unreadable items
+        </div>
+      )}
     </div>
   );
 };

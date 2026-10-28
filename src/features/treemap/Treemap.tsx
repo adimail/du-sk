@@ -11,6 +11,7 @@ interface TreemapProps {
   onDrillDown: (folderName: string) => void;
   canDrill: boolean;
   isScanning?: boolean;
+  showSubfolders?: boolean;
 }
 
 interface HoverState {
@@ -26,6 +27,7 @@ export const Treemap: React.FC<TreemapProps> = ({
   onDrillDown,
   canDrill,
   isScanning = false,
+  showSubfolders = true,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
@@ -117,6 +119,25 @@ export const Treemap: React.FC<TreemapProps> = ({
         height={dimensions.height}
         style={{ display: "block" }}
       >
+        <defs>
+          <pattern
+            id="hatch-pattern"
+            width="10"
+            height="10"
+            patternTransform="rotate(45 0 0)"
+            patternUnits="userSpaceOnUse"
+          >
+            <line
+              x1="0"
+              y1="0"
+              x2="0"
+              y2="10"
+              stroke="rgba(255, 255, 255, 0.09)"
+              strokeWidth="2"
+            />
+          </pattern>
+        </defs>
+
         {layout.map((node, i) => {
           const item = node.data;
           const w = Math.max(0, node.x1 - node.x0);
@@ -128,7 +149,7 @@ export const Treemap: React.FC<TreemapProps> = ({
           const isClickable = canDrill && item.is_dir && !item.is_aggregate;
 
           const hasSubChildren = item.children && item.children.length > 0;
-          const canRenderSubTreemap = !isScanning && hasSubChildren && w >= 90 && h >= 68;
+          const canRenderSubTreemap = showSubfolders && !isScanning && hasSubChildren && w >= 90 && h >= 68;
           const headerHeight = h >= 32 && w >= 60 ? 28 : 0;
 
           const showHeader = w >= 50 && h >= 22;
@@ -202,6 +223,16 @@ export const Treemap: React.FC<TreemapProps> = ({
                   transition: "width 0.2s ease-out, height 0.2s ease-out",
                 }}
               />
+
+              {item.incomplete && (
+                <rect
+                  width={w}
+                  height={h}
+                  fill="url(#hatch-pattern)"
+                  rx={6}
+                  pointerEvents="none"
+                />
+              )}
 
               {showHeader && (
                 <g transform="translate(8, 6)">
@@ -293,6 +324,15 @@ export const Treemap: React.FC<TreemapProps> = ({
                             transition: "width 0.2s ease-out, height 0.2s ease-out",
                           }}
                         />
+                        {subItem.incomplete && (
+                          <rect
+                            width={sw}
+                            height={sh}
+                            fill="url(#hatch-pattern)"
+                            rx={3}
+                            pointerEvents="none"
+                          />
+                        )}
                         {showSubLabel && (
                           <text
                             x={4}

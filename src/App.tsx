@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
+  FolderPreset,
   FolderViewResponse,
   ProgressPayload,
   ScanCompletePayload,
@@ -20,7 +21,26 @@ function App() {
   const [totalFiles, setTotalFiles] = useState(0);
   const [duration, setDuration] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [presets, setPresets] = useState<FolderPreset[]>([]);
+  const [currentTargetPath, setCurrentTargetPath] = useState<string | null>(null);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [showSubfolders, setShowSubfolders] = useState(true);
   const initialScanRef = useRef(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    invoke<FolderPreset[]>("get_folder_presets").then(setPresets).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    window.addEventListener("mousedown", handleClickOutside);
+    return () => window.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   useEffect(() => {
     const unlistenProgress = listen<ProgressPayload>("scan-progress", (event) => {
@@ -77,11 +97,12 @@ function App() {
   }, [currentView, status]);
 
   async function handleStartScan(targetPath?: string) {
+    const path = targetPath || currentTargetPath || undefined;
     setStatus("scanning");
     setErrorMessage(null);
     setProgress(null);
     try {
-      await invoke("start_scan", { targetPath: targetPath || null });
+      await invoke("start_scan", { targetPath: path || null });
     } catch (err) {
       const msg = String(err);
       if (msg.includes("already in progress")) return;
@@ -92,6 +113,25 @@ function App() {
 
   async function handleCancelScan() {
     await invoke("cancel_scan");
+  }
+
+  async function handleSelectPreset(preset: FolderPreset) {
+    setDropdownOpen(false);
+    setCurrentTargetPath(preset.path);
+    await handleStartScan(preset.path);
+  }
+
+  async function handlePickCustomFolder() {
+    setDropdownOpen(false);
+    try {
+      const chosen = await invoke<string | null>("pick_folder");
+      if (chosen) {
+        setCurrentTargetPath(chosen);
+        await handleStartScan(chosen);
+      }
+    } catch (err) {
+      console.error(err);
+    }
   }
 
   async function handleDrillDown(folderName: string) {
@@ -141,6 +181,18 @@ function App() {
     ? (progress ? progress.bytes : 0)
     : (currentView ? currentView.total_size : 0);
 
+  const displayTargetName = useMemo(() => {
+    if (currentTargetPath) {
+      const matched = presets.find((p) => p.path === currentTargetPath);
+      if (matched) return matched.label;
+      const parts = currentTargetPath.replace(/\/$/, "").split("/");
+      return parts[parts.length - 1] || currentTargetPath;
+    }
+    return "Library";
+  }, [currentTargetPath, presets]);
+
+  const canGoBack = Boolean(currentView && currentView.current_path.length > 1);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#0e0e11" }}>
       <header
@@ -154,11 +206,113 @@ function App() {
           padding: "0 16px",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <span style={{ fontWeight: 600, fontSize: "13px", color: "#f4f4f5", letterSpacing: "-0.01em" }}>
             du-sk
           </span>
-          {currentView && (
+
+          <div ref={dropdownRef} style={{ position: "relative" }}>
+            <button
+              onClick={() => setDropdownOpen(!dropdownOpen)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                background: "rgba(255, 255, 255, 0.06)",
+                border: "1px solid rgba(255, 255, 255, 0.08)",
+                color: "#f4f4f5",
+                padding: "3px 10px",
+                borderRadius: "16px",
+                fontSize: "12px",
+                fontWeight: 500,
+                cursor: "pointer",
+              }}
+            >
+              <span>{displayTargetName}</span>
+              <span style={{ fontSize: "9px", color: "#a1a1aa" }}>▼</span>
+            </button>
+
+            {dropdownOpen && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "32px",
+                  left: 0,
+                  zIndex: 9999,
+                  background: "#16161b",
+                  border: "1px solid rgba(255, 255, 255, 0.1)",
+                  borderRadius: "10px",
+                  padding: "5px",
+                  minWidth: "170px",
+                  boxShadow: "0 10px 30px rgba(0,0,0,0.6)",
+                }}
+              >
+                {presets.map((preset) => (
+                  <button
+                    key={preset.path}
+                    onClick={() => handleSelectPreset(preset)}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      background: currentTargetPath === preset.path ? "rgba(251, 146, 60, 0.15)" : "transparent",
+                      border: "none",
+                      color: currentTargetPath === preset.path ? "#fb923c" : "#e4e4e7",
+                      padding: "6px 10px",
+                      borderRadius: "6px",
+                      fontSize: "12px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+
+                <div style={{ height: "1px", background: "rgba(255, 255, 255, 0.08)", margin: "4px 0" }} />
+
+                <button
+                  onClick={handlePickCustomFolder}
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    background: "transparent",
+                    border: "none",
+                    color: "#f4f4f5",
+                    padding: "6px 10px",
+                    borderRadius: "6px",
+                    fontSize: "12px",
+                    cursor: "pointer",
+                    fontWeight: 500,
+                  }}
+                >
+                  Choose Folder…
+                </button>
+              </div>
+            )}
+          </div>
+
+          {canGoBack && (
+            <button
+              onClick={() => handleNavigateBreadcrumb(currentView!.current_path.length - 2)}
+              disabled={status === "scanning"}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "rgba(255, 255, 255, 0.06)",
+                border: "1px solid rgba(255, 255, 255, 0.08)",
+                color: status === "scanning" ? "#52525b" : "#f4f4f5",
+                width: "26px",
+                height: "26px",
+                borderRadius: "13px",
+                fontSize: "12px",
+                cursor: status === "scanning" ? "default" : "pointer",
+              }}
+            >
+              ←
+            </button>
+          )}
+
+          {currentView && currentView.current_path.length > 0 && (
             <Breadcrumb
               path={currentView.current_path}
               onNavigate={handleNavigateBreadcrumb}
@@ -167,7 +321,34 @@ function App() {
           )}
         </div>
 
-        <div>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <button
+            onClick={() => setShowSubfolders(!showSubfolders)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              background: showSubfolders ? "rgba(251, 146, 60, 0.12)" : "rgba(255, 255, 255, 0.06)",
+              border: `1px solid ${showSubfolders ? "rgba(251, 146, 60, 0.3)" : "rgba(255, 255, 255, 0.08)"}`,
+              color: showSubfolders ? "#fb923c" : "#a1a1aa",
+              padding: "5px 12px",
+              borderRadius: "20px",
+              fontSize: "12px",
+              fontWeight: 500,
+              cursor: "pointer",
+            }}
+          >
+            <span>Sub-folders</span>
+            <span
+              style={{
+                width: "6px",
+                height: "6px",
+                borderRadius: "50%",
+                background: showSubfolders ? "#fb923c" : "#71717a",
+              }}
+            />
+          </button>
+
           {status === "scanning" ? (
             <button
               onClick={handleCancelScan}
@@ -271,6 +452,7 @@ function App() {
             onDrillDown={handleDrillDown}
             canDrill={status === "complete"}
             isScanning={status === "scanning"}
+            showSubfolders={showSubfolders}
           />
         ) : (
           <div
