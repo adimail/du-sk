@@ -1,10 +1,41 @@
 use std::env;
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
+
+struct RawModeGuard {
+    orig: libc::termios,
+}
+
+impl RawModeGuard {
+    fn enter() -> Option<Self> {
+        unsafe {
+            let mut orig = std::mem::zeroed();
+            if libc::tcgetattr(libc::STDIN_FILENO, &mut orig) != 0 {
+                return None;
+            }
+            let mut raw = orig;
+            raw.c_lflag &= !(libc::ICANON | libc::ECHO);
+            raw.c_cc[libc::VMIN] = 0;
+            raw.c_cc[libc::VTIME] = 0;
+            if libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &raw) != 0 {
+                return None;
+            }
+            Some(Self { orig })
+        }
+    }
+}
+
+impl Drop for RawModeGuard {
+    fn drop(&mut self) {
+        unsafe {
+            libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &self.orig);
+        }
+    }
+}
 
 struct Preset {
     key: &'static str,
@@ -196,10 +227,23 @@ fn main() {
     let spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
     let mut frame = 0;
     let mut started = false;
+    let mut cancelled = false;
 
+    let raw_guard = RawModeGuard::enter();
     print!("\x1b[?7l");
 
+    let mut stdin_stream = io::stdin();
+    let mut key_buf = [0u8; 1];
+
     while !scan_handle.is_finished() {
+        if let Ok(n) = stdin_stream.read(&mut key_buf) {
+            if n > 0 && (key_buf[0] == b'q' || key_buf[0] == b'Q' || key_buf[0] == 3) {
+                cancel.store(true, Ordering::Relaxed);
+                cancelled = true;
+                break;
+            }
+        }
+
         let files = progress.files_scanned.load(Ordering::Relaxed);
         let bytes = progress.bytes_scanned.load(Ordering::Relaxed);
         let errors = progress.errors_count.load(Ordering::Relaxed);
@@ -214,7 +258,7 @@ fn main() {
         started = true;
 
         print!(
-            "\x1b[2K \x1b[1;38;5;208m{}\x1b[0m  Scanning...  \x1b[1;37m{}\x1b[0m files  \x1b[38;5;240m|\x1b[0m  \x1b[1;38;5;208m{}\x1b[0m  \x1b[38;5;240m|\x1b[0m  \x1b[38;5;244m{:.1}s\x1b[0m",
+            "\x1b[2K \x1b[1;38;5;208m{}\x1b[0m  Scanning...  \x1b[1;37m{}\x1b[0m files  \x1b[38;5;240m|\x1b[0m  \x1b[1;38;5;208m{}\x1b[0m  \x1b[38;5;240m|\x1b[0m  \x1b[38;5;244m{:.1}s\x1b[0m  \x1b[38;5;240m(\x1b[38;5;244mq to quit\x1b[38;5;240m)\x1b[0m",
             spin_char,
             format_number(files),
             format_bytes(bytes),
@@ -234,7 +278,9 @@ fn main() {
         thread::sleep(Duration::from_millis(50));
     }
 
+    drop(raw_guard);
     print!("\x1b[?7h");
+
     if started {
         print!("\r\x1b[2K\x1b[1A\r\x1b[2K\x1b[?25h");
     } else {
@@ -245,9 +291,23 @@ fn main() {
     match scan_handle.join().unwrap() {
         Ok(result) => {
             let duration = start.elapsed();
-            let total_size = result.total_bytes;
+            let total_size = if result.total_bytes > 0 {
+                result.total_bytes
+            } else {
+                progress.bytes_scanned.load(Ordering::Relaxed)
+            };
+            let total_files = if result.total_files > 0 {
+                result.total_files
+            } else {
+                progress.files_scanned.load(Ordering::Relaxed)
+            };
 
-            println!("\x1b[1;38;5;208m┌─ Scan Overview ─────────────────────────────────────────────────────────────┐\x1b[0m");
+            if cancelled {
+                println!("\x1b[1;38;5;208m┌─ Scan Overview \x1b[38;5;203m(Cancelled — Partial Results)\x1b[1;38;5;208m ──────────────────────────┐\x1b[0m");
+            } else {
+                println!("\x1b[1;38;5;208m┌─ Scan Overview ─────────────────────────────────────────────────────────────┐\x1b[0m");
+            }
+
             println!(
                 "\x1b[1;38;5;208m│\x1b[0m Target:   \x1b[1;37m{:<66}\x1b[0m \x1b[1;38;5;208m│\x1b[0m",
                 target_path.display()
@@ -255,12 +315,17 @@ fn main() {
             println!(
                 "\x1b[1;38;5;208m│\x1b[0m Total:    \x1b[1;38;5;208m{:<12}\x1b[0m  Files: \x1b[1;37m{:<12}\x1b[0m  Time: \x1b[38;5;244m{:<9.2?} \x1b[0m Errors: \x1b[38;5;{}m{:<5}\x1b[0m \x1b[1;38;5;208m│\x1b[0m",
                 format_bytes(total_size),
-                format_number(result.total_files),
+                format_number(total_files),
                 duration,
                 if result.unreadable_paths.is_empty() { 244 } else { 203 },
                 result.unreadable_paths.len()
             );
             println!("\x1b[1;38;5;208m└─────────────────────────────────────────────────────────────────────────────┘\x1b[0m\n");
+
+            if result.root_node.children.is_empty() {
+                println!("  \x1b[38;5;244mNo items collected before cancellation.\x1b[0m\n");
+                return;
+            }
 
             let max_name_width = 30;
             println!(

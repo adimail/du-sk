@@ -865,6 +865,7 @@ name = "du-sk-cli"
 version = "0.1.0"
 dependencies = [
  "du-sk-core",
+ "libc",
 ]
 
 [[package]]
