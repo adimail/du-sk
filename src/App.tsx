@@ -9,18 +9,12 @@ import {
 } from "./types";
 import { Treemap } from "./features/treemap/Treemap";
 import { Breadcrumb } from "./features/breadcrumb/Breadcrumb";
-import {
-  ProgressStrip,
-  WarningBanner,
-  StatusBar,
-} from "./features/scan-status/StatusComponents";
-import { getStableHue } from "./lib/utils";
+import { ProgressStrip, StatusBar } from "./features/scan-status/StatusComponents";
 import "./App.css";
 
 function App() {
   const [status, setStatus] = useState<ScanStatus>("idle");
   const [progress, setProgress] = useState<ProgressPayload | null>(null);
-  const [unreadablePaths, setUnreadablePaths] = useState<string[]>([]);
   const [currentView, setCurrentView] = useState<FolderViewResponse | null>(null);
   const [totalFiles, setTotalFiles] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -36,7 +30,6 @@ function App() {
       setStatus("complete");
       setProgress(null);
       setCurrentView(event.payload.root_view);
-      setUnreadablePaths(event.payload.unreadable_paths);
       setTotalFiles(event.payload.total_files);
       setDuration(event.payload.elapsed_secs);
     });
@@ -74,8 +67,7 @@ function App() {
         currentView.current_path.length > 1 &&
         status !== "scanning"
       ) {
-        const targetIndex = currentView.current_path.length - 2;
-        handleNavigateBreadcrumb(targetIndex);
+        handleNavigateBreadcrumb(currentView.current_path.length - 2);
       }
     }
 
@@ -91,9 +83,7 @@ function App() {
       await invoke("start_scan", { targetPath: targetPath || null });
     } catch (err) {
       const msg = String(err);
-      if (msg.includes("already in progress")) {
-        return;
-      }
+      if (msg.includes("already in progress")) return;
       setStatus("error");
       setErrorMessage(msg);
     }
@@ -112,7 +102,7 @@ function App() {
       });
       setCurrentView(response);
     } catch (err) {
-      console.error("Failed to drill down:", err);
+      console.error(err);
     }
   }
 
@@ -125,35 +115,25 @@ function App() {
       });
       setCurrentView(response);
     } catch (err) {
-      console.error("Failed to navigate:", err);
+      console.error(err);
     }
   }
 
-  const baseHue =
-    currentView && currentView.current_path.length > 1
-      ? getStableHue(currentView.current_path[1])
-      : undefined;
-
-  const currentErrorsCount =
-    status === "scanning" && progress
-      ? progress.errors
-      : unreadablePaths.length;
-
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#0f0f11" }}>
       <header
         style={{
-          height: "44px",
-          background: "#18181b",
-          borderBottom: "1px solid #27272a",
+          height: "48px",
+          background: "#131316",
+          borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
           padding: "0 16px",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-          <span style={{ fontWeight: 700, fontSize: "14px", letterSpacing: "-0.02em" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <span style={{ fontWeight: 600, fontSize: "13px", color: "#f4f4f5", letterSpacing: "-0.01em" }}>
             du-sk
           </span>
           {currentView && (
@@ -170,11 +150,11 @@ function App() {
             <button
               onClick={handleCancelScan}
               style={{
-                background: "#7f1d1d",
-                color: "#fecaca",
-                border: "none",
-                padding: "4px 12px",
-                borderRadius: "4px",
+                background: "rgba(255, 255, 255, 0.06)",
+                color: "#d4d4d8",
+                border: "1px solid rgba(255, 255, 255, 0.08)",
+                padding: "5px 14px",
+                borderRadius: "20px",
                 fontSize: "12px",
                 fontWeight: 500,
                 cursor: "pointer",
@@ -186,14 +166,15 @@ function App() {
             <button
               onClick={() => handleStartScan()}
               style={{
-                background: "#2563eb",
+                background: "#ea580c",
                 color: "#ffffff",
                 border: "none",
-                padding: "4px 12px",
-                borderRadius: "4px",
+                padding: "5px 16px",
+                borderRadius: "20px",
                 fontSize: "12px",
                 fontWeight: 500,
                 cursor: "pointer",
+                boxShadow: "0 2px 8px rgba(234, 88, 12, 0.25)",
               }}
             >
               Rescan
@@ -204,12 +185,7 @@ function App() {
 
       {status === "scanning" && <ProgressStrip progress={progress} />}
 
-      <WarningBanner
-        errorCount={currentErrorsCount}
-        unreadablePaths={unreadablePaths}
-      />
-
-      <main style={{ flex: 1, position: "relative" }}>
+      <main style={{ flex: 1, position: "relative", padding: "12px" }}>
         {status === "error" ? (
           <div
             style={{
@@ -221,15 +197,16 @@ function App() {
               gap: "12px",
             }}
           >
-            <div style={{ color: "#f87171" }}>Scan failed: {errorMessage}</div>
+            <div style={{ color: "#f87171", fontSize: "13px" }}>{errorMessage}</div>
             <button
               onClick={() => handleStartScan()}
               style={{
-                background: "#2563eb",
+                background: "#ea580c",
                 color: "#fff",
                 border: "none",
-                padding: "6px 14px",
-                borderRadius: "4px",
+                padding: "6px 16px",
+                borderRadius: "20px",
+                fontSize: "12px",
                 cursor: "pointer",
               }}
             >
@@ -245,22 +222,24 @@ function App() {
               justifyContent: "center",
               height: "100%",
               gap: "12px",
-              color: "#a1a1aa",
+              color: "#71717a",
+              fontSize: "13px",
             }}
           >
-            <div>Scan was cancelled.</div>
+            <div>Scan cancelled</div>
             <button
               onClick={() => handleStartScan()}
               style={{
-                background: "#2563eb",
+                background: "#ea580c",
                 color: "#fff",
                 border: "none",
-                padding: "6px 14px",
-                borderRadius: "4px",
+                padding: "6px 16px",
+                borderRadius: "20px",
+                fontSize: "12px",
                 cursor: "pointer",
               }}
             >
-              Scan
+              Start Scan
             </button>
           </div>
         ) : currentView ? (
@@ -269,7 +248,6 @@ function App() {
             totalSize={currentView.total_size}
             onDrillDown={handleDrillDown}
             canDrill={status === "complete"}
-            baseHue={baseHue}
           />
         ) : (
           <div
@@ -279,6 +257,7 @@ function App() {
               justifyContent: "center",
               height: "100%",
               color: "#71717a",
+              fontSize: "13px",
             }}
           >
             Starting scan…
@@ -291,7 +270,6 @@ function App() {
           totalBytes={currentView.total_size}
           totalFiles={totalFiles}
           durationSecs={duration}
-          errorCount={unreadablePaths.length}
         />
       )}
     </div>

@@ -10,7 +10,6 @@ interface TreemapProps {
   totalSize: number;
   onDrillDown: (folderName: string) => void;
   canDrill: boolean;
-  baseHue?: number;
 }
 
 interface HoverState {
@@ -25,7 +24,6 @@ export const Treemap: React.FC<TreemapProps> = ({
   totalSize,
   onDrillDown,
   canDrill,
-  baseHue,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
@@ -66,7 +64,7 @@ export const Treemap: React.FC<TreemapProps> = ({
     const treemap = d3
       .treemap<TileItem>()
       .size([dimensions.width, dimensions.height])
-      .paddingInner(1)
+      .paddingInner(3)
       .round(true);
 
     const laidOutRoot = treemap(root);
@@ -83,11 +81,13 @@ export const Treemap: React.FC<TreemapProps> = ({
           alignItems: "center",
           justifyContent: "center",
           color: "#71717a",
-          fontSize: "14px",
-          backgroundColor: "#121214",
+          fontSize: "13px",
+          backgroundColor: "#131316",
+          borderRadius: "14px",
+          border: "1px solid rgba(255, 255, 255, 0.05)",
         }}
       >
-        This folder is empty
+        Empty directory
       </div>
     );
   }
@@ -100,7 +100,9 @@ export const Treemap: React.FC<TreemapProps> = ({
         height: "100%",
         position: "relative",
         overflow: "hidden",
-        backgroundColor: "#121214",
+        backgroundColor: "#131316",
+        borderRadius: "14px",
+        border: "1px solid rgba(255, 255, 255, 0.05)",
       }}
       onMouseLeave={() => setHover(null)}
     >
@@ -116,12 +118,12 @@ export const Treemap: React.FC<TreemapProps> = ({
 
           if (w <= 0 || h <= 0) return null;
 
-          const color = getTileColor(item.name, 0, item.is_aggregate, baseHue);
-          const showLabel = w >= 48 && h >= 18;
+          const color = getTileColor(item.name, 0, item.is_aggregate);
+          const showLabel = w >= 44 && h >= 20;
           const isClickable = canDrill && item.is_dir && !item.is_aggregate;
 
           const hasSubChildren = item.children && item.children.length > 0;
-          const canRenderSubTreemap = hasSubChildren && w >= 90 && h >= 60;
+          const canRenderSubTreemap = hasSubChildren && w >= 80 && h >= 56;
           const headerHeight = canRenderSubTreemap ? 24 : 0;
 
           let subLayout: HierarchyRectangularNode<TileItem>[] = [];
@@ -143,8 +145,8 @@ export const Treemap: React.FC<TreemapProps> = ({
 
             const subTreemap = d3
               .treemap<TileItem>()
-              .size([w - 4, h - headerHeight - 4])
-              .paddingInner(1)
+              .size([w - 6, h - headerHeight - 6])
+              .paddingInner(2)
               .round(true);
 
             const laidOutSub = subTreemap(subRoot);
@@ -183,36 +185,24 @@ export const Treemap: React.FC<TreemapProps> = ({
                 fill={color.bg}
                 stroke={color.border}
                 strokeWidth={1}
-                rx={2}
+                rx={6}
               />
 
-              {item.incomplete && w >= 24 && h >= 24 && (
-                <text
-                  x={w - 14}
-                  y={16}
-                  fontSize={12}
-                  fill="#f87171"
-                  textAnchor="middle"
-                >
-                  ⚠️
-                </text>
-              )}
-
               {showLabel && (
-                <g transform="translate(6, 14)">
+                <g transform="translate(8, 16)">
                   <text
                     fontSize={11}
-                    fontWeight={600}
-                    fill="#ffffff"
+                    fontWeight={500}
+                    fill={color.text}
                     style={{ userSelect: "none" }}
                   >
-                    {truncateText(item.name, w - (item.incomplete ? 28 : 12))}
+                    {truncateText(item.name, w - 16)}
                   </text>
-                  {h >= 32 && !canRenderSubTreemap && (
+                  {h >= 34 && !canRenderSubTreemap && (
                     <text
-                      y={14}
+                      y={13}
                       fontSize={10}
-                      fill="rgba(255, 255, 255, 0.75)"
+                      fill={color.subtext}
                       style={{ userSelect: "none" }}
                     >
                       {formatBytes(item.size)}
@@ -222,7 +212,7 @@ export const Treemap: React.FC<TreemapProps> = ({
               )}
 
               {canRenderSubTreemap && (
-                <g transform={`translate(2, ${headerHeight + 2})`}>
+                <g transform={`translate(3, ${headerHeight + 3})`}>
                   {subLayout.map((subNode, subIdx) => {
                     const subItem = subNode.data;
                     const sw = subNode.x1 - subNode.x0;
@@ -230,8 +220,8 @@ export const Treemap: React.FC<TreemapProps> = ({
 
                     if (sw <= 0 || sh <= 0) return null;
 
-                    const subColor = getTileColor(subItem.name, 1, subItem.is_aggregate, color.hue);
-                    const showSubLabel = sw >= 40 && sh >= 16;
+                    const subColor = getTileColor(subItem.name, 1, subItem.is_aggregate);
+                    const showSubLabel = sw >= 36 && sh >= 16;
 
                     return (
                       <g
@@ -253,14 +243,14 @@ export const Treemap: React.FC<TreemapProps> = ({
                           fill={subColor.bg}
                           stroke={subColor.border}
                           strokeWidth={1}
-                          rx={1}
+                          rx={4}
                         />
                         {showSubLabel && (
                           <text
                             x={4}
                             y={11}
                             fontSize={9}
-                            fill="rgba(255, 255, 255, 0.9)"
+                            fill="#d4d4d8"
                             style={{ userSelect: "none" }}
                           >
                             {truncateText(subItem.name, sw - 8)}

@@ -8,46 +8,53 @@ export function formatBytes(bytes: number): string {
   return `${val} ${sizes[i]}`;
 }
 
-export function getStableHue(name: string): number {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = (hash << 5) - hash + name.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash) % 360;
-}
-
-export function getTileColor(
-  name: string,
-  depth: number,
-  isAggregate: boolean,
-  parentHue?: number
-): { bg: string; border: string; text: string; hue: number } {
-  if (isAggregate) {
-    return {
-      bg: "#27272a",
-      border: "#3f3f46",
-      text: "#a1a1aa",
-      hue: 0,
-    };
-  }
-
-  const hue = parentHue !== undefined ? parentHue : getStableHue(name);
-  const lightness = depth === 0 ? 25 : depth === 1 ? 35 : 45;
-  const borderLightness = depth === 0 ? 35 : depth === 1 ? 45 : 55;
-
-  return {
-    bg: `hsl(${hue}, 48%, ${lightness}%)`,
-    border: `hsl(${hue}, 52%, ${borderLightness}%)`,
-    text: "#ffffff",
-    hue,
-  };
-}
-
 export function truncateText(text: string, maxPixelWidth: number): string {
   const avgCharWidth = 7;
   const maxChars = Math.floor(maxPixelWidth / avgCharWidth);
   if (maxChars <= 3) return "";
   if (text.length <= maxChars) return text;
   return `${text.slice(0, maxChars - 1)}…`;
+}
+
+export function getTileColor(
+  name: string,
+  depth: number,
+  isAggregate: boolean
+): { bg: string; border: string; text: string; subtext: string } {
+  if (isAggregate) {
+    return {
+      bg: "#161619",
+      border: "#232328",
+      text: "#71717a",
+      subtext: "#52525b",
+    };
+  }
+
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = (hash << 5) - hash + name.charCodeAt(i);
+    hash |= 0;
+  }
+  const posHash = Math.abs(hash);
+  const hue = 22 + (posHash % 16);
+
+  if (depth === 0) {
+    const lightness = 13 + (posHash % 6);
+    const saturation = 16 + (posHash % 10);
+    return {
+      bg: `hsl(${hue}, ${saturation}%, ${lightness}%)`,
+      border: `hsla(${hue}, 38%, 32%, 0.45)`,
+      text: "#f4f4f5",
+      subtext: "#fdba74",
+    };
+  }
+
+  const lightness = 9 + (posHash % 4);
+  const saturation = 12 + (posHash % 8);
+  return {
+    bg: `hsl(${hue}, ${saturation}%, ${lightness}%)`,
+    border: `hsla(${hue}, 30%, 24%, 0.35)`,
+    text: "#e4e4e7",
+    subtext: "#a1a1aa",
+  };
 }

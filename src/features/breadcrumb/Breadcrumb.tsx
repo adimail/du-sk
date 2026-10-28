@@ -16,9 +16,11 @@ export const Breadcrumb: React.FC<BreadcrumbProps> = ({
       style={{
         display: "flex",
         alignItems: "center",
-        gap: "6px",
-        fontSize: "13px",
-        color: "#9ca3af",
+        gap: "4px",
+        background: "rgba(255, 255, 255, 0.04)",
+        padding: "3px 8px",
+        borderRadius: "20px",
+        border: "1px solid rgba(255, 255, 255, 0.06)",
       }}
     >
       {path.map((segment, index) => {
@@ -26,9 +28,30 @@ export const Breadcrumb: React.FC<BreadcrumbProps> = ({
 
         return (
           <React.Fragment key={`${segment}-${index}`}>
-            {index > 0 && <span style={{ color: "#4b5563" }}>›</span>}
+            {index > 0 && (
+              <span
+                style={{
+                  color: "#52525b",
+                  fontSize: "11px",
+                  userSelect: "none",
+                }}
+              >
+                /
+              </span>
+            )}
             {isLast ? (
-              <span style={{ color: "#f3f4f6", fontWeight: 600 }}>{segment}</span>
+              <span
+                style={{
+                  color: "#f4f4f5",
+                  fontWeight: 500,
+                  fontSize: "12px",
+                  padding: "2px 6px",
+                  borderRadius: "12px",
+                  background: "rgba(255, 255, 255, 0.07)",
+                }}
+              >
+                {segment}
+              </span>
             ) : (
               <button
                 type="button"
@@ -37,11 +60,12 @@ export const Breadcrumb: React.FC<BreadcrumbProps> = ({
                 style={{
                   background: "transparent",
                   border: "none",
-                  padding: "2px 4px",
-                  color: disabled ? "#4b5563" : "#60a5fa",
+                  padding: "2px 6px",
+                  color: disabled ? "#52525b" : "#a1a1aa",
                   cursor: disabled ? "default" : "pointer",
-                  borderRadius: "4px",
-                  fontSize: "13px",
+                  borderRadius: "12px",
+                  fontSize: "12px",
+                  fontWeight: 400,
                 }}
               >
                 {segment}

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import { formatBytes } from "../../lib/utils";
 import { ProgressPayload } from "../../types";
 
@@ -9,7 +9,7 @@ export const ProgressStrip: React.FC<{ progress: ProgressPayload | null }> = ({
     <div
       style={{
         background: "#18181b",
-        borderBottom: "1px solid #27272a",
+        borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
         position: "relative",
         overflow: "hidden",
       }}
@@ -21,7 +21,8 @@ export const ProgressStrip: React.FC<{ progress: ProgressPayload | null }> = ({
           left: 0,
           right: 0,
           height: "2px",
-          background: "linear-gradient(90deg, transparent, #3b82f6, transparent)",
+          background:
+            "linear-gradient(90deg, transparent, #ea580c, #fb923c, transparent)",
           animation: "progress-indeterminate 1.5s infinite ease-in-out",
         }}
       />
@@ -29,7 +30,7 @@ export const ProgressStrip: React.FC<{ progress: ProgressPayload | null }> = ({
         style={{
           padding: "6px 16px",
           fontSize: "12px",
-          color: "#d4d4d8",
+          color: "#a1a1aa",
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
@@ -37,21 +38,16 @@ export const ProgressStrip: React.FC<{ progress: ProgressPayload | null }> = ({
       >
         <div style={{ display: "flex", gap: "16px" }}>
           <span>
-            Files: <strong>{progress ? progress.files.toLocaleString() : 0}</strong>
+            Files: <strong style={{ color: "#f4f4f5" }}>{progress ? progress.files.toLocaleString() : 0}</strong>
           </span>
           <span>
-            Size: <strong>{formatBytes(progress ? progress.bytes : 0)}</strong>
+            Size: <strong style={{ color: "#f4f4f5" }}>{formatBytes(progress ? progress.bytes : 0)}</strong>
           </span>
           <span>
-            Time: <strong>{progress ? progress.elapsed_secs.toFixed(1) : "0.0"}s</strong>
+            Time: <strong style={{ color: "#f4f4f5" }}>{progress ? progress.elapsed_secs.toFixed(1) : "0.0"}s</strong>
           </span>
-          {progress && progress.errors > 0 && (
-            <span style={{ color: "#f87171" }}>
-              Errors: <strong>{progress.errors}</strong>
-            </span>
-          )}
         </div>
-        <div style={{ color: "#a1a1aa", fontStyle: "italic" }}>Scanning in progress…</div>
+        <div style={{ color: "#71717a", fontSize: "11px" }}>Scanning directory…</div>
       </div>
       <style>{`
         @keyframes progress-indeterminate {
@@ -63,99 +59,36 @@ export const ProgressStrip: React.FC<{ progress: ProgressPayload | null }> = ({
   );
 };
 
-export const WarningBanner: React.FC<{
-  errorCount: number;
-  unreadablePaths: string[];
-}> = ({ errorCount, unreadablePaths }) => {
-  const [expanded, setExpanded] = useState(false);
-
-  if (errorCount === 0) return null;
-
-  return (
-    <div
-      style={{
-        background: "#451a1a",
-        borderBottom: "1px solid #7f1d1d",
-        color: "#fecaca",
-        padding: "8px 16px",
-        fontSize: "12px",
-      }}
-    >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span>
-          ⚠️ <strong>{errorCount} items</strong> could not be read. Totals are incomplete.
-          Grant Full Disk Access in macOS System Settings → Privacy & Security.
-        </span>
-        {unreadablePaths.length > 0 && (
-          <button
-            onClick={() => setExpanded(!expanded)}
-            style={{
-              background: "rgba(255, 255, 255, 0.1)",
-              border: "none",
-              color: "#fff",
-              padding: "2px 8px",
-              borderRadius: "4px",
-              fontSize: "11px",
-              cursor: "pointer",
-            }}
-          >
-            {expanded ? "Hide paths" : `View paths (${unreadablePaths.length})`}
-          </button>
-        )}
-      </div>
-
-      {expanded && unreadablePaths.length > 0 && (
-        <div
-          style={{
-            marginTop: "8px",
-            maxHeight: "120px",
-            overflowY: "auto",
-            background: "#2b1111",
-            padding: "6px 8px",
-            borderRadius: "4px",
-            fontSize: "11px",
-            fontFamily: "monospace",
-          }}
-        >
-          {unreadablePaths.map((path, i) => (
-            <div key={i} style={{ color: "#fca5a5", marginBottom: "2px" }}>
-              {path}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
 export const StatusBar: React.FC<{
   totalBytes: number;
   totalFiles: number;
   durationSecs: number;
-  errorCount: number;
-}> = ({ totalBytes, totalFiles, durationSecs, errorCount }) => {
+}> = ({ totalBytes, totalFiles, durationSecs }) => {
   return (
-    <div
+    <footer
       style={{
-        background: "#18181b",
-        borderTop: "1px solid #27272a",
-        padding: "6px 16px",
-        fontSize: "12px",
-        color: "#a1a1aa",
+        height: "36px",
+        background: "#131316",
+        borderTop: "1px solid rgba(255, 255, 255, 0.06)",
+        padding: "0 16px",
+        fontSize: "11px",
+        color: "#71717a",
         display: "flex",
+        alignItems: "center",
         justifyContent: "space-between",
       }}
     >
       <div style={{ display: "flex", gap: "16px" }}>
-        <span>Total: <strong>{formatBytes(totalBytes)}</strong></span>
-        <span>Files: <strong>{totalFiles.toLocaleString()}</strong></span>
-        <span>Duration: <strong>{durationSecs.toFixed(2)}s</strong></span>
-      </div>
-      {errorCount > 0 && (
-        <span style={{ color: "#f87171" }}>
-          Unreadable: {errorCount}
+        <span>
+          Total: <strong style={{ color: "#e4e4e7" }}>{formatBytes(totalBytes)}</strong>
         </span>
-      )}
-    </div>
+        <span>
+          Files: <strong style={{ color: "#e4e4e7" }}>{totalFiles.toLocaleString()}</strong>
+        </span>
+        <span>
+          Duration: <strong style={{ color: "#e4e4e7" }}>{durationSecs.toFixed(2)}s</strong>
+        </span>
+      </div>
+    </footer>
   );
 };
