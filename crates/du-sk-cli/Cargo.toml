@@ -1,0 +1,7 @@
+[package]
+name = "du-sk-cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+du-sk-core = { path = "../du-sk-core" }
