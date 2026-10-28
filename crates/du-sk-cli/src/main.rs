@@ -42,19 +42,16 @@ fn main() {
 
     let start = Instant::now();
 
-    // 1. Spawn scanner on a worker thread
     let scan_handle = thread::spawn(move || {
         du_sk_core::scan_directory(&target_clone, cancel_clone, progress_clone)
     });
 
-    // 2. Poll progress at 10Hz (every 100ms) on the main thread
     while !scan_handle.is_finished() {
         let files = progress.files_scanned.load(Ordering::Relaxed);
         let bytes = progress.bytes_scanned.load(Ordering::Relaxed);
         let errors = progress.errors_count.load(Ordering::Relaxed);
         let elapsed = start.elapsed().as_secs_f64();
 
-        // \x1B[2K clears the current terminal line, \r moves cursor to start
         print!(
             "\x1B[2K\rScanning... Files: {:>7} | Size: {:>9} | Errors: {} | Time: {:.1}s",
             files,
@@ -67,11 +64,9 @@ fn main() {
         thread::sleep(Duration::from_millis(100));
     }
 
-    // 3. Clear ticker line
     print!("\x1B[2K\r");
     let _ = io::stdout().flush();
 
-    // 4. Retrieve result
     match scan_handle.join().unwrap() {
         Ok(result) => {
             let duration = start.elapsed();

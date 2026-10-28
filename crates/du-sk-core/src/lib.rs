@@ -1,7 +1,9 @@
 pub mod node;
+pub mod query;
 pub mod scan;
 
 pub use node::FileNode;
+pub use query::{FolderViewResponse, TileItem};
 pub use scan::{scan_directory, ScanProgress, ScanResult};
 
 pub fn version() -> &'static str {
