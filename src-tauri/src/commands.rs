@@ -1,5 +1,7 @@
 use crate::state::AppState;
-use du_sk_core::{FolderViewResponse, LiveBucketSnapshot, ScanProgress, scan_directory};
+use du_sk_core::{
+    FolderViewResponse, LiveBucketSnapshot, ScanProgress, SearchResultItem, scan_directory,
+};
 use serde::Serialize;
 use std::path::PathBuf;
 use std::process::Command;
@@ -235,4 +237,34 @@ pub fn get_folder_children(
         .ok_or_else(|| format!("Path not found: {:?}", path_segments))?;
 
     Ok(node.to_folder_view(path_segments))
+}
+
+#[tauri::command]
+pub fn search_folder(
+    state: State<'_, AppState>,
+    path_segments: Vec<String>,
+    query: String,
+    limit: Option<usize>,
+) -> Result<Vec<SearchResultItem>, String> {
+    if state.is_scanning.load(Ordering::Relaxed) {
+        return Ok(Vec::new());
+    }
+
+    let trimmed = query.trim();
+    if trimmed.chars().count() < 2 {
+        return Ok(Vec::new());
+    }
+
+    let slot = state.scan_result.lock().map_err(|e| e.to_string())?;
+    let scan_res = slot.as_ref().ok_or("No scan data available")?;
+
+    let seg_slices: Vec<&str> = path_segments.iter().map(|s| s.as_str()).collect();
+
+    let node = scan_res
+        .root_node
+        .find_node_by_path(&seg_slices)
+        .ok_or_else(|| format!("Path not found: {:?}", path_segments))?;
+
+    let max_results = limit.unwrap_or(100);
+    Ok(node.search_subtree(&path_segments, trimmed, max_results))
 }

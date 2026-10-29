@@ -179,10 +179,12 @@ export function useFolderScan(targetPath: string | null) {
     cancelScan,
     drillDown,
     navigateBreadcrumb,
+    navigateToSegments,
     goUp,
     canGoUp,
     activeTiles,
     activeTotal,
     currentDirectoryPath,
+    scannedRootPath,
   };
 }
