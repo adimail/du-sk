@@ -1,4 +1,5 @@
-use du_sk_core::FileNode;
+use du_sk_core::{FileNode, SearchIndex};
+use std::sync::atomic::AtomicU64;
 use std::time::Instant;
 
 fn build_fixture_tree() -> FileNode {
@@ -114,6 +115,31 @@ fn test_relative_paths() {
 }
 
 #[test]
+fn test_index_resolves_nested_base_path() {
+    let root = build_fixture_tree();
+    let index = SearchIndex::build(&root);
+    let latest = AtomicU64::new(1);
+    let base = vec!["root".to_string(), "Documents".to_string()];
+
+    let res = index.search(&base, "pdf", 10, &latest, 1).unwrap();
+    let names: Vec<&str> = res.iter().map(|i| i.name.as_str()).collect();
+
+    assert!(names.contains(&"resume.pdf"));
+    assert!(!names.contains(&"pdf_reader.dmg"));
+    assert!(!names.contains(&"pdf"));
+}
+
+#[test]
+fn test_stale_request_is_cancelled() {
+    let root = build_fixture_tree();
+    let index = SearchIndex::build(&root);
+    let latest = AtomicU64::new(2);
+    let base = vec!["root".to_string()];
+
+    assert!(index.search(&base, "pdf", 10, &latest, 1).is_none());
+}
+
+#[test]
 fn test_benchmark_large_tree_traversal() {
     let mut root = FileNode::new_dir("benchmark_root");
 
@@ -142,9 +168,12 @@ fn test_benchmark_large_tree_traversal() {
 
     root.roll_up_sizes();
 
+    let index = SearchIndex::build(&root);
+    let latest = AtomicU64::new(1);
     let base = vec!["benchmark_root".to_string()];
+
     let start = Instant::now();
-    let matches = root.search_subtree(&base, "target_match", 50);
+    let matches = index.search(&base, "target_match", 50, &latest, 1).unwrap();
     let elapsed = start.elapsed();
 
     assert_eq!(matches.len(), 50);

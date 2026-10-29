@@ -1,7 +1,9 @@
+pub mod index;
 pub mod node;
 pub mod query;
 pub mod scan;
 
+pub use index::SearchIndex;
 pub use node::FileNode;
 pub use query::{FolderViewResponse, SearchResultItem, TileItem};
 pub use scan::{scan_directory, LiveBucketSnapshot, ScanProgress, ScanResult};

@@ -2,9 +2,20 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { SearchResultItem } from "../types";
 
+export const RESULT_LIMIT = 50;
+const DEBOUNCE_MS = 150;
+const MIN_QUERY_LENGTH = 2;
+
+interface PendingSearch {
+  key: string;
+  query: string;
+  scope: string[];
+}
+
 export function useFolderSearch(
   currentPathSegments: string[],
-  isScanning: boolean
+  isScanning: boolean,
+  searchAll: boolean
 ) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResultItem[]>([]);
@@ -12,23 +23,78 @@ export function useFolderSearch(
   const [isOpen, setIsOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
 
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const activeRequestIdRef = useRef(0);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requestIdRef = useRef(0);
+  const lastKeyRef = useRef<string | null>(null);
+  const pendingRef = useRef<PendingSearch | null>(null);
+  const inFlightRef = useRef(false);
+  const segmentsRef = useRef(currentPathSegments);
+  segmentsRef.current = currentPathSegments;
+
+  const pathKey = currentPathSegments.join("/");
+  const scopeKey = searchAll ? currentPathSegments[0] ?? "" : pathKey;
+
+  const cancelTimer = useCallback(() => {
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    pendingRef.current = null;
+  }, []);
 
   const clearSearch = useCallback(() => {
+    cancelTimer();
+    requestIdRef.current += 1;
+    inFlightRef.current = false;
+    lastKeyRef.current = null;
     setQuery("");
     setResults([]);
+    setIsSearching(false);
     setIsOpen(false);
     setSelectedIndex(-1);
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = null;
+  }, [cancelTimer]);
+
+  const runSearch = useCallback(async (trimmed: string, scope: string[]) => {
+    const requestId = ++requestIdRef.current;
+    inFlightRef.current = true;
+    setIsSearching(true);
+
+    try {
+      const res = await invoke<SearchResultItem[]>("search_folder", {
+        pathSegments: scope,
+        query: trimmed,
+        limit: RESULT_LIMIT,
+      });
+
+      if (requestId === requestIdRef.current) {
+        setResults(res);
+        setIsOpen(true);
+        setSelectedIndex(res.length > 0 ? 0 : -1);
+      }
+    } catch {
+      if (requestId === requestIdRef.current) {
+        setResults([]);
+        setSelectedIndex(-1);
+      }
+    } finally {
+      if (requestId === requestIdRef.current) {
+        inFlightRef.current = false;
+        setIsSearching(false);
+      }
     }
   }, []);
 
+  const searchNow = useCallback(() => {
+    const pending = pendingRef.current;
+    if (!pending) return;
+    cancelTimer();
+    lastKeyRef.current = pending.key;
+    runSearch(pending.query, pending.scope);
+  }, [cancelTimer, runSearch]);
+
   useEffect(() => {
     clearSearch();
-  }, [currentPathSegments, clearSearch]);
+  }, [pathKey, clearSearch]);
 
   useEffect(() => {
     if (isScanning) {
@@ -37,52 +103,41 @@ export function useFolderSearch(
   }, [isScanning, clearSearch]);
 
   useEffect(() => {
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
-
     const trimmed = query.trim();
+    const scope = searchAll
+      ? segmentsRef.current.slice(0, 1)
+      : segmentsRef.current;
 
-    if (trimmed.length < 2 || isScanning || currentPathSegments.length === 0) {
+    if (trimmed.length < MIN_QUERY_LENGTH || isScanning || scope.length === 0) {
+      cancelTimer();
+      requestIdRef.current += 1;
+      inFlightRef.current = false;
+      lastKeyRef.current = null;
       setResults([]);
       setIsSearching(false);
       setSelectedIndex(-1);
       return;
     }
 
+    const key = `${searchAll ? "all" : "dir"}\u0000${scopeKey}\u0000${trimmed}`;
+
+    if (key === lastKeyRef.current) {
+      setIsSearching(inFlightRef.current);
+      return;
+    }
+
+    cancelTimer();
     setIsSearching(true);
-    const requestId = ++activeRequestIdRef.current;
+    pendingRef.current = { key, query: trimmed, scope };
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      pendingRef.current = null;
+      lastKeyRef.current = key;
+      runSearch(trimmed, scope);
+    }, DEBOUNCE_MS);
 
-    debounceTimerRef.current = setTimeout(async () => {
-      try {
-        const res: SearchResultItem[] = await invoke("search_folder", {
-          pathSegments: currentPathSegments,
-          query: trimmed,
-          limit: 100,
-        });
-
-        if (requestId === activeRequestIdRef.current) {
-          setResults(res);
-          setIsOpen(true);
-          setSelectedIndex(-1);
-        }
-      } catch {
-        if (requestId === activeRequestIdRef.current) {
-          setResults([]);
-        }
-      } finally {
-        if (requestId === activeRequestIdRef.current) {
-          setIsSearching(false);
-        }
-      }
-    }, 120);
-
-    return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-    };
-  }, [query, currentPathSegments, isScanning]);
+    return cancelTimer;
+  }, [query, scopeKey, searchAll, isScanning, cancelTimer, runSearch]);
 
   return {
     query,
@@ -94,5 +149,6 @@ export function useFolderSearch(
     selectedIndex,
     setSelectedIndex,
     clearSearch,
+    searchNow,
   };
 }

@@ -1,6 +1,7 @@
 use crate::state::AppState;
 use du_sk_core::{
-    FolderViewResponse, LiveBucketSnapshot, ScanProgress, SearchResultItem, scan_directory,
+    FolderViewResponse, LiveBucketSnapshot, ScanProgress, SearchIndex, SearchResultItem,
+    scan_directory,
 };
 use serde::Serialize;
 use std::path::PathBuf;
@@ -100,7 +101,11 @@ pub fn pick_folder() -> Result<Option<String>, String> {
 pub fn cancel_scan(state: State<'_, AppState>) {
     state.cancel_token.store(true, Ordering::Relaxed);
     state.is_scanning.store(false, Ordering::Relaxed);
+    state.search_seq.fetch_add(1, Ordering::SeqCst);
     if let Ok(mut lock) = state.scan_result.lock() {
+        *lock = None;
+    }
+    if let Ok(mut lock) = state.search_index.lock() {
         *lock = None;
     }
 }
@@ -132,10 +137,12 @@ pub fn start_scan(
     }
 
     state.cancel_token.store(false, Ordering::Relaxed);
+    state.search_seq.fetch_add(1, Ordering::SeqCst);
     let cancel = state.cancel_token.clone();
     let progress = Arc::new(ScanProgress::default());
 
     let scan_result_slot = state.scan_result.clone();
+    let search_index_slot = state.search_index.clone();
     let is_scanning_flag = state.is_scanning.clone();
 
     let target_clone = target.clone();
@@ -193,6 +200,7 @@ pub fn start_scan(
                 let root_name = result.root_node.name.to_string();
                 let root_view = result.root_node.to_folder_view(vec![root_name]);
                 let scanned_path = target.to_string_lossy().to_string();
+                let index = Arc::new(SearchIndex::build(&result.root_node));
 
                 let complete_payload = ScanCompletePayload {
                     total_bytes: result.total_bytes,
@@ -203,8 +211,13 @@ pub fn start_scan(
                     scanned_path,
                 };
 
+                let result = Arc::new(result);
+
                 if let Ok(mut slot) = scan_result_slot.lock() {
                     *slot = Some(result);
+                }
+                if let Ok(mut slot) = search_index_slot.lock() {
+                    *slot = Some(index);
                 }
 
                 let _ = app.emit("scan-complete", complete_payload);
@@ -226,8 +239,12 @@ pub fn get_folder_children(
     state: State<'_, AppState>,
     path_segments: Vec<String>,
 ) -> Result<FolderViewResponse, String> {
-    let slot = state.scan_result.lock().map_err(|e| e.to_string())?;
-    let scan_res = slot.as_ref().ok_or("No scan data available")?;
+    let scan_res = state
+        .scan_result
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or("No scan data available")?;
 
     let seg_slices: Vec<&str> = path_segments.iter().map(|s| s.as_str()).collect();
 
@@ -240,7 +257,7 @@ pub fn get_folder_children(
 }
 
 #[tauri::command]
-pub fn search_folder(
+pub async fn search_folder(
     state: State<'_, AppState>,
     path_segments: Vec<String>,
     query: String,
@@ -250,21 +267,27 @@ pub fn search_folder(
         return Ok(Vec::new());
     }
 
-    let trimmed = query.trim();
+    let trimmed = query.trim().to_string();
     if trimmed.chars().count() < 2 {
         return Ok(Vec::new());
     }
 
-    let slot = state.scan_result.lock().map_err(|e| e.to_string())?;
-    let scan_res = slot.as_ref().ok_or("No scan data available")?;
+    let index = state
+        .search_index
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or("No scan data available")?;
 
-    let seg_slices: Vec<&str> = path_segments.iter().map(|s| s.as_str()).collect();
+    let latest = state.search_seq.clone();
+    let request_id = latest.fetch_add(1, Ordering::SeqCst) + 1;
+    let max_results = limit.unwrap_or(50);
 
-    let node = scan_res
-        .root_node
-        .find_node_by_path(&seg_slices)
-        .ok_or_else(|| format!("Path not found: {:?}", path_segments))?;
+    let outcome = tauri::async_runtime::spawn_blocking(move || {
+        index.search(&path_segments, &trimmed, max_results, &latest, request_id)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
 
-    let max_results = limit.unwrap_or(100);
-    Ok(node.search_subtree(&path_segments, trimmed, max_results))
+    Ok(outcome.unwrap_or_default())
 }
