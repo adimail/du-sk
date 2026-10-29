@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { formatBytes } from "../lib/utils";
 import { FolderPreset, ScanState } from "../types";
+import { SearchBar } from "./SearchBar";
 
 interface HeaderProps {
   scanState: ScanState;
@@ -9,6 +10,8 @@ interface HeaderProps {
   canGoUp: boolean;
   onSelectPath: (path: string) => void;
   onNavigateBreadcrumb: (index: number) => void;
+  onNavigateSegments: (segments: string[]) => void;
+  onRevealItem?: (segments: string[]) => void;
   onGoUp: () => void;
   onCancelScan: () => void;
   onRescan: () => void;
@@ -20,6 +23,8 @@ export const Header: React.FC<HeaderProps> = ({
   canGoUp,
   onSelectPath,
   onNavigateBreadcrumb,
+  onNavigateSegments,
+  onRevealItem,
   onGoUp,
   onCancelScan,
   onRescan,
@@ -168,6 +173,13 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
+          <SearchBar
+            currentPathSegments={currentPath}
+            isScanning={isScanning}
+            onNavigateToSegments={onNavigateSegments}
+            onRevealItem={onRevealItem}
+          />
+
           {isScanning ? (
             <button
               type="button"

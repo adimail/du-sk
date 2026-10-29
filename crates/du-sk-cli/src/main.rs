@@ -119,7 +119,7 @@ fn render_bar(ratio: f64, width: usize) -> String {
 fn print_help(presets: &[Preset]) {
     println!("\x1b[1;38;5;208mdu-sk-cli\x1b[0m - Fast terminal disk space inspector\n");
     println!("\x1b[1;37mUSAGE:\x1b[0m");
-    println!("  du-sk-cli [TARGET | PRESET] [--top <N>]\n");
+    println!("  du-sk-cli [TARGET | PRESET] [-s <QUERY>] [-n <N>]\n");
     println!("\x1b[1;37mPRESETS:\x1b[0m");
     for p in presets {
         println!(
@@ -130,10 +130,11 @@ fn print_help(presets: &[Preset]) {
     }
     println!("\n\x1b[1;37mOPTIONS:\x1b[0m");
     println!(
-        "  \x1b[38;5;208m-n, --top <N>\x1b[0m    Number of largest items to show (default: 15)"
+        "  \x1b[38;5;208m-s, --search <QUERY>\x1b[0m  Search across all scanned files and folders"
     );
-    println!("  \x1b[38;5;208m-p, --presets\x1b[0m    List available preset targets");
-    println!("  \x1b[38;5;208m-h, --help\x1b[0m       Show help information\n");
+    println!("  \x1b[38;5;208m-n, --top <N>\x1b[0m        Number of items to show (default: 15)");
+    println!("  \x1b[38;5;208m-p, --presets\x1b[0m        List available preset targets");
+    println!("  \x1b[38;5;208m-h, --help\x1b[0m           Show help information\n");
 }
 
 fn main() {
@@ -141,6 +142,7 @@ fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
 
     let mut target_str: Option<String> = None;
+    let mut search_query: Option<String> = None;
     let mut top_limit: usize = 15;
 
     let mut i = 0;
@@ -162,6 +164,12 @@ fn main() {
                 }
                 println!();
                 return;
+            }
+            "-s" | "--search" => {
+                if i + 1 < args.len() {
+                    search_query = Some(args[i + 1].clone());
+                    i += 1;
+                }
             }
             "-n" | "--top" => {
                 if i + 1 < args.len() {
@@ -324,6 +332,61 @@ fn main() {
 
             if result.root_node.children.is_empty() {
                 println!("  \x1b[38;5;244mNo items collected before cancellation.\x1b[0m\n");
+                return;
+            }
+
+            if let Some(ref query) = search_query {
+                let search_start = Instant::now();
+                let base_segments = vec![result.root_node.name.to_string()];
+                let search_results =
+                    result
+                        .root_node
+                        .search_subtree(&base_segments, query, top_limit);
+                let search_duration = search_start.elapsed();
+
+                println!(
+                    " \x1b[1;38;5;208mSearch:\x1b[0m \"\x1b[1;37m{}\x1b[0m\" \x1b[38;5;244m({} matches found in {:.2?})\x1b[0m",
+                    query,
+                    search_results.len(),
+                    search_duration
+                );
+                println!(" \x1b[38;5;238m{}\x1b[0m", "─".repeat(77));
+                println!(
+                    " \x1b[38;5;240m{:<6} {:>10}  {:<26}  RELATIVE PATH\x1b[0m",
+                    "KIND", "SIZE", "NAME"
+                );
+                println!(" \x1b[38;5;238m{}\x1b[0m", "─".repeat(77));
+
+                if search_results.is_empty() {
+                    println!(
+                        "  \x1b[38;5;244mNo files or folders matching \"{}\".\x1b[0m\n",
+                        query
+                    );
+                } else {
+                    let max_name_width = 26;
+                    for item in &search_results {
+                        let (tag, tag_style) = if item.is_dir {
+                            ("DIR ", "\x1b[38;5;208m")
+                        } else {
+                            ("FILE", "\x1b[38;5;244m")
+                        };
+
+                        let name_display = if item.name.len() > max_name_width {
+                            format!("{}…", &item.name[..max_name_width - 1])
+                        } else {
+                            item.name.clone()
+                        };
+
+                        println!(
+                            " {tag_style}[{tag}]\x1b[0m \x1b[1;37m{:>10}\x1b[0m  \x1b[1;37m{:<26}\x1b[0m  \x1b[38;5;244m{}\x1b[0m",
+                            format_bytes(item.size),
+                            name_display,
+                            item.relative_path
+                        );
+                    }
+                    println!(" \x1b[38;5;238m{}\x1b[0m\n", "─".repeat(77));
+                }
+
                 return;
             }
 

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { Header } from "./components/Header";
 import { Treemap } from "./components/Treemap";
 import { useFolderScan } from "./hooks/useFolderScan";
@@ -13,11 +14,13 @@ function App() {
     cancelScan,
     drillDown,
     navigateBreadcrumb,
+    navigateToSegments,
     goUp,
     canGoUp,
     activeTiles,
     activeTotal,
     currentDirectoryPath,
+    scannedRootPath,
   } = useFolderScan(currentTargetPath);
 
   function handleSelectPath(path: string) {
@@ -35,6 +38,22 @@ function App() {
     }
   }
 
+  async function handleRevealItem(segments: string[]) {
+    const base = scannedRootPath || currentTargetPath;
+    if (!base || segments.length === 0) return;
+
+    const relSegments = segments.length > 1 ? segments.slice(1) : [];
+    const fullPath = `${base.replace(/\/+$/, "")}/${relSegments.join("/")}`;
+
+    try {
+      await revealItemInDir(fullPath);
+    } catch {
+      if (segments.length > 1) {
+        navigateToSegments(segments.slice(0, -1));
+      }
+    }
+  }
+
   return (
     <div className="flex flex-col h-screen bg-[#0e0e11] overflow-hidden">
       <Header
@@ -43,6 +62,8 @@ function App() {
         canGoUp={canGoUp}
         onSelectPath={handleSelectPath}
         onNavigateBreadcrumb={navigateBreadcrumb}
+        onNavigateSegments={navigateToSegments}
+        onRevealItem={handleRevealItem}
         onGoUp={goUp}
         onCancelScan={cancelScan}
         onRescan={handleRescan}

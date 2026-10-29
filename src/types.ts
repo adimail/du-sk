@@ -43,6 +43,14 @@ export interface FolderPreset {
   path: string;
 }
 
+export interface SearchResultItem {
+  name: string;
+  path_segments: string[];
+  relative_path: string;
+  size: number;
+  is_dir: boolean;
+}
+
 export type ScanStatus = "idle" | "scanning" | "complete" | "cancelled" | "error";
 
 export interface ScanState {

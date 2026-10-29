@@ -1,8 +1,7 @@
 use crate::node::FileNode;
 use serde::{Deserialize, Serialize};
 
-/// Data transfer object sent to the frontend for rendering treemap tiles.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TileItem {
     pub name: String,
     pub size: u64,
@@ -10,11 +9,10 @@ pub struct TileItem {
     pub incomplete: bool,
     pub is_aggregate: bool,
     pub aggregate_count: usize,
-    /// Second level children (for nested display inside the tile).
     pub children: Vec<TileItem>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FolderViewResponse {
     pub current_path: Vec<String>,
     pub total_size: u64,
@@ -22,11 +20,18 @@ pub struct FolderViewResponse {
     pub tiles: Vec<TileItem>,
 }
 
-const MERGE_THRESHOLD_RATIO: f64 = 0.005; // 0.5%
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SearchResultItem {
+    pub name: String,
+    pub path_segments: Vec<String>,
+    pub relative_path: String,
+    pub size: u64,
+    pub is_dir: bool,
+}
+
+const MERGE_THRESHOLD_RATIO: f64 = 0.005;
 
 impl FileNode {
-    /// Navigate down the tree following a sequence of names (breadcrumb).
-    /// e.g. ["Library", "Application Support"]
     pub fn find_node_by_path(&self, path_segments: &[&str]) -> Option<&FileNode> {
         if path_segments.is_empty() {
             return Some(self);
@@ -50,7 +55,6 @@ impl FileNode {
 
     pub fn to_folder_view(&self, current_path: Vec<String>) -> FolderViewResponse {
         let threshold = (self.size as f64 * MERGE_THRESHOLD_RATIO) as u64;
-
         let tiles = aggregate_children(&self.children, threshold, true);
 
         FolderViewResponse {
@@ -62,10 +66,6 @@ impl FileNode {
     }
 }
 
-/// Aggregates children list:
-/// - Skips 0-byte items
-/// - Merges items < threshold into one aggregate tile
-/// - If `include_level2` is true, aggregates their children as well (nested tiles)
 fn aggregate_children(nodes: &[FileNode], threshold: u64, include_level2: bool) -> Vec<TileItem> {
     let mut large_items: Vec<TileItem> = Vec::new();
     let mut small_items_size: u64 = 0;
