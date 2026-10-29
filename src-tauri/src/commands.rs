@@ -25,6 +25,7 @@ pub struct ScanCompletePayload {
     pub elapsed_secs: f64,
     pub unreadable_paths: Vec<String>,
     pub root_view: FolderViewResponse,
+    pub scanned_path: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -189,6 +190,7 @@ pub fn start_scan(
 
                 let root_name = result.root_node.name.to_string();
                 let root_view = result.root_node.to_folder_view(vec![root_name]);
+                let scanned_path = target.to_string_lossy().to_string();
 
                 let complete_payload = ScanCompletePayload {
                     total_bytes: result.total_bytes,
@@ -196,6 +198,7 @@ pub fn start_scan(
                     elapsed_secs,
                     unreadable_paths: unreadable_strings,
                     root_view,
+                    scanned_path,
                 };
 
                 if let Ok(mut slot) = scan_result_slot.lock() {

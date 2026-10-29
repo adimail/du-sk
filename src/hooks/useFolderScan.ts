@@ -19,6 +19,7 @@ export function useFolderScan(targetPath: string | null) {
     error: null,
   });
 
+  const [scannedRootPath, setScannedRootPath] = useState<string | null>(null);
   const initialScanRef = useRef(false);
 
   const startScan = useCallback(async (overridePath?: string) => {
@@ -49,28 +50,7 @@ export function useFolderScan(targetPath: string | null) {
     await invoke("cancel_scan");
   }, []);
 
-  const drillDown = useCallback(async (folderName: string) => {
-    if (!scanState.view || scanState.status === "scanning") return;
-
-    const nextBreadcrumb = [...scanState.view.current_path, folderName];
-    try {
-      const response: FolderViewResponse = await invoke("get_folder_children", {
-        pathSegments: nextBreadcrumb,
-      });
-
-      setScanState((prev) => ({
-        ...prev,
-        view: response,
-      }));
-    } catch (err) {
-      console.error(err);
-    }
-  }, [scanState.view, scanState.status]);
-
-  const navigateBreadcrumb = useCallback(async (index: number) => {
-    if (!scanState.view || scanState.status === "scanning") return;
-
-    const targetBreadcrumb = scanState.view.current_path.slice(0, index + 1);
+  const navigateToSegments = useCallback(async (targetBreadcrumb: string[]) => {
     try {
       const response: FolderViewResponse = await invoke("get_folder_children", {
         pathSegments: targetBreadcrumb,
@@ -83,7 +63,25 @@ export function useFolderScan(targetPath: string | null) {
     } catch (err) {
       console.error(err);
     }
-  }, [scanState.view, scanState.status]);
+  }, []);
+
+  const drillDown = useCallback(async (folderName: string) => {
+    if (!scanState.view || scanState.status === "scanning") return;
+    const nextBreadcrumb = [...scanState.view.current_path, folderName];
+    await navigateToSegments(nextBreadcrumb);
+  }, [scanState.view, scanState.status, navigateToSegments]);
+
+  const navigateBreadcrumb = useCallback(async (index: number) => {
+    if (!scanState.view || scanState.status === "scanning") return;
+    const targetBreadcrumb = scanState.view.current_path.slice(0, index + 1);
+    await navigateToSegments(targetBreadcrumb);
+  }, [scanState.view, scanState.status, navigateToSegments]);
+
+  const goUp = useCallback(async () => {
+    if (scanState.view && scanState.view.current_path.length > 1) {
+      await navigateBreadcrumb(scanState.view.current_path.length - 2);
+    }
+  }, [scanState.view, navigateBreadcrumb]);
 
   useEffect(() => {
     const unlistenProgress = listen<ProgressPayload>("scan-progress", (event) => {
@@ -102,6 +100,8 @@ export function useFolderScan(targetPath: string | null) {
         duration: event.payload.elapsed_secs,
         error: null,
       });
+
+      setScannedRootPath(event.payload.scanned_path);
     });
 
     const unlistenCancelled = listen("scan-cancelled", () => {
@@ -135,21 +135,15 @@ export function useFolderScan(targetPath: string | null) {
     };
   }, [startScan]);
 
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if (
-        e.key === "Backspace" &&
-        scanState.view &&
-        scanState.view.current_path.length > 1 &&
-        scanState.status !== "scanning"
-      ) {
-        navigateBreadcrumb(scanState.view.current_path.length - 2);
-      }
+  const currentDirectoryPath = useMemo(() => {
+    const basePath = scannedRootPath || targetPath;
+    if (!basePath) return null;
+    if (!scanState.view || scanState.view.current_path.length <= 1) {
+      return basePath;
     }
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [scanState.view, scanState.status, navigateBreadcrumb]);
+    const cleanBase = basePath.replace(/\/+$/, "");
+    return `${cleanBase}/${scanState.view.current_path.slice(1).join("/")}`;
+  }, [scannedRootPath, targetPath, scanState.view]);
 
   const liveTiles = useMemo((): TileItem[] => {
     if (scanState.status !== "scanning" || !scanState.progress?.live_tiles) {
@@ -177,13 +171,18 @@ export function useFolderScan(targetPath: string | null) {
       ? scanState.progress?.bytes || 0
       : scanState.view?.total_size || 0;
 
+  const canGoUp = Boolean(scanState.view && scanState.view.current_path.length > 1);
+
   return {
     scanState,
     startScan,
     cancelScan,
     drillDown,
     navigateBreadcrumb,
+    goUp,
+    canGoUp,
     activeTiles,
     activeTotal,
+    currentDirectoryPath,
   };
 }

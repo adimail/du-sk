@@ -35,6 +35,7 @@ export interface ScanCompletePayload {
   elapsed_secs: number;
   unreadable_paths: string[];
   root_view: FolderViewResponse;
+  scanned_path: string;
 }
 
 export interface FolderPreset {
