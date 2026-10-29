@@ -3,7 +3,7 @@ pub mod query;
 pub mod scan;
 
 pub use node::FileNode;
-pub use query::{FolderViewResponse, TileItem};
+pub use query::{FolderViewResponse, SearchResultItem, TileItem};
 pub use scan::{scan_directory, LiveBucketSnapshot, ScanProgress, ScanResult};
 
 pub fn version() -> &'static str {

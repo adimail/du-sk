@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FileNode {
     pub name: Box<str>,
     pub size: u64,
