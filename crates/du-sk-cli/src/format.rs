@@ -36,3 +36,17 @@ pub fn render_bar(ratio: f64, width: usize) -> String {
     let empty = width.saturating_sub(filled);
     format!("{}{}", "■".repeat(filled), "·".repeat(empty))
 }
+
+pub fn render_tri_bar(scanned_ratio: f64, used_ratio: f64, width: usize) -> String {
+    let scanned_w = ((scanned_ratio * width as f64).round() as usize).min(width);
+    let total_used_w = ((used_ratio * width as f64).round() as usize).min(width);
+    let other_used_w = total_used_w.saturating_sub(scanned_w);
+    let free_w = width.saturating_sub(scanned_w + other_used_w);
+
+    format!(
+        "\x1b[38;5;208m{}\x1b[38;5;244m{}\x1b[38;5;238m{}\x1b[0m",
+        "■".repeat(scanned_w),
+        "■".repeat(other_used_w),
+        "·".repeat(free_w)
+    )
+}

@@ -9,6 +9,15 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiskSpace {
+    pub total_bytes: u64,
+    pub free_bytes: u64,
+    pub available_bytes: u64,
+    pub mount_point: String,
+    pub fs_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LiveBucketSnapshot {
     pub name: String,
     pub size: u64,
@@ -66,6 +75,7 @@ pub struct ScanResult {
     pub unreadable_paths: Vec<PathBuf>,
     pub total_files: u64,
     pub total_bytes: u64,
+    pub disk_space: Option<DiskSpace>,
 }
 
 struct ScanContext {
@@ -74,6 +84,47 @@ struct ScanContext {
     progress: Arc<ScanProgress>,
     seen_inodes: Mutex<HashSet<(u64, u64)>>,
     unreadable_paths: Mutex<Vec<PathBuf>>,
+}
+
+#[cfg(target_os = "macos")]
+fn extract_fs_info(stat: &libc::statfs) -> (String, String) {
+    use std::ffi::CStr;
+    let mount_point = unsafe {
+        CStr::from_ptr(stat.f_mntonname.as_ptr())
+            .to_string_lossy()
+            .into_owned()
+    };
+    let fs_type = unsafe {
+        CStr::from_ptr(stat.f_fstypename.as_ptr())
+            .to_string_lossy()
+            .to_uppercase()
+    };
+    (mount_point, fs_type)
+}
+
+pub fn get_disk_space(path: &Path) -> Option<DiskSpace> {
+    use std::os::unix::ffi::OsStrExt;
+
+    let c_path = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
+    let mut stat: libc::statfs = unsafe { std::mem::zeroed() };
+    let res = unsafe { libc::statfs(c_path.as_ptr(), &mut stat) };
+    if res != 0 {
+        return None;
+    }
+
+    let bsize = stat.f_bsize as u64;
+    let total_bytes = stat.f_blocks * bsize;
+    let free_bytes = stat.f_bfree * bsize;
+    let available_bytes = stat.f_bavail * bsize;
+    let (mount_point, fs_type) = extract_fs_info(&stat);
+
+    Some(DiskSpace {
+        total_bytes,
+        free_bytes,
+        available_bytes,
+        mount_point,
+        fs_type,
+    })
 }
 
 pub fn scan_directory(
@@ -89,6 +140,7 @@ pub fn scan_directory(
         ));
     }
 
+    let disk_space = get_disk_space(root_path);
     let root_dev = root_meta.dev();
     let ctx = Arc::new(ScanContext {
         root_dev,
@@ -122,6 +174,7 @@ pub fn scan_directory(
                 unreadable_paths,
                 total_files: 0,
                 total_bytes: 0,
+                disk_space,
             });
         }
     };
@@ -221,6 +274,7 @@ pub fn scan_directory(
         unreadable_paths,
         total_files,
         total_bytes,
+        disk_space,
     })
 }
 

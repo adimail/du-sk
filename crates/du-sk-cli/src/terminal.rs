@@ -35,6 +35,19 @@ impl Drop for RawModeGuard {
     }
 }
 
+pub fn get_terminal_width() -> usize {
+    unsafe {
+        let mut winsize: libc::winsize = std::mem::zeroed();
+        if libc::ioctl(libc::STDOUT_FILENO, libc::TIOCGWINSZ, &mut winsize) == 0
+            && winsize.ws_col > 0
+        {
+            (winsize.ws_col as usize).max(60)
+        } else {
+            80
+        }
+    }
+}
+
 pub fn clear_screen() {
     print!("\x1b[2J\x1b[H\x1b[?25l");
     let _ = io::stdout().flush();
