@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -15,15 +15,17 @@ export function useFolderScan(targetPath: string | null) {
     progress: null,
     view: null,
     totalFiles: 0,
+    rootTotalBytes: 0,
     duration: 0,
+    diskSpace: null,
     error: null,
   });
 
   const [scannedRootPath, setScannedRootPath] = useState<string | null>(null);
-  const initialScanRef = useRef(false);
 
   const startScan = useCallback(async (overridePath?: string) => {
     const path = overridePath || targetPath || undefined;
+    if (!path) return;
 
     setScanState((prev) => ({
       ...prev,
@@ -33,7 +35,7 @@ export function useFolderScan(targetPath: string | null) {
     }));
 
     try {
-      await invoke("start_scan", { targetPath: path || null });
+      await invoke("start_scan", { targetPath: path });
     } catch (err) {
       const message = String(err);
       if (message.includes("already in progress")) return;
@@ -97,7 +99,9 @@ export function useFolderScan(targetPath: string | null) {
         progress: null,
         view: event.payload.root_view,
         totalFiles: event.payload.total_files,
+        rootTotalBytes: event.payload.total_bytes,
         duration: event.payload.elapsed_secs,
+        diskSpace: event.payload.disk_space,
         error: null,
       });
 
@@ -110,6 +114,8 @@ export function useFolderScan(targetPath: string | null) {
         status: "cancelled",
         progress: null,
         view: null,
+        rootTotalBytes: 0,
+        diskSpace: null,
       }));
     });
 
@@ -119,13 +125,10 @@ export function useFolderScan(targetPath: string | null) {
         status: "error",
         error: event.payload,
         progress: null,
+        rootTotalBytes: 0,
+        diskSpace: null,
       }));
     });
-
-    if (!initialScanRef.current) {
-      initialScanRef.current = true;
-      startScan();
-    }
 
     return () => {
       unlistenProgress.then((f) => f());
@@ -133,7 +136,7 @@ export function useFolderScan(targetPath: string | null) {
       unlistenCancelled.then((f) => f());
       unlistenError.then((f) => f());
     };
-  }, [startScan]);
+  }, []);
 
   const currentDirectoryPath = useMemo(() => {
     const basePath = scannedRootPath || targetPath;

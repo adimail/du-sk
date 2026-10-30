@@ -1,6 +1,6 @@
 use crate::state::AppState;
 use du_sk_core::{
-    FolderViewResponse, LiveBucketSnapshot, ScanProgress, SearchIndex, SearchResultItem,
+    DiskSpace, FolderViewResponse, LiveBucketSnapshot, ScanProgress, SearchIndex, SearchResultItem,
     get_preset_locations, scan_directory,
 };
 use serde::Serialize;
@@ -29,6 +29,7 @@ pub struct ScanCompletePayload {
     pub unreadable_paths: Vec<String>,
     pub root_view: FolderViewResponse,
     pub scanned_path: String,
+    pub disk_space: Option<DiskSpace>,
 }
 
 #[derive(Clone, Serialize)]
@@ -170,6 +171,7 @@ pub fn start_scan(
                 let root_view = result.root_node.to_folder_view(vec![root_name]);
                 let scanned_path = target.to_string_lossy().to_string();
                 let index = Arc::new(SearchIndex::build(&result.root_node, &scanned_path));
+                let disk_space = result.disk_space.clone();
 
                 let complete_payload = ScanCompletePayload {
                     total_bytes: result.total_bytes,
@@ -178,6 +180,7 @@ pub fn start_scan(
                     unreadable_paths: unreadable_strings,
                     root_view,
                     scanned_path,
+                    disk_space,
                 };
 
                 let result = Arc::new(result);

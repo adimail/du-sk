@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect, useMemo } from "react";
 import * as d3 from "d3-hierarchy";
 import type { HierarchyRectangularNode } from "d3-hierarchy";
-import { TileItem } from "../types";
+import { HoveredTileInfo, TileItem } from "../types";
 import { formatBytes, getTileColor, truncateText } from "../lib/utils";
 
 interface TreemapProps {
@@ -9,6 +9,7 @@ interface TreemapProps {
   totalSize: number;
   onDrillDown: (folderName: string) => void;
   canDrill: boolean;
+  onHoverTile?: (item: HoveredTileInfo | null) => void;
 }
 
 interface NestedChildLayout {
@@ -24,6 +25,7 @@ export const Treemap: React.FC<TreemapProps> = ({
   totalSize,
   onDrillDown,
   canDrill,
+  onHoverTile,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
@@ -53,8 +55,9 @@ export const Treemap: React.FC<TreemapProps> = ({
       setIsZooming(false);
       setHoveredTileIndex(null);
       setHoveredSubTileKey(null);
+      if (onHoverTile) onHoverTile(null);
     }
-  }, [tiles, dimensions]);
+  }, [tiles, dimensions, onHoverTile]);
 
   const layout = useMemo((): HierarchyRectangularNode<TileItem>[] => {
     if (dimensions.width === 0 || dimensions.height === 0 || tiles.length === 0) {
@@ -230,10 +233,14 @@ export const Treemap: React.FC<TreemapProps> = ({
               transform={`translate(${node.x0}, ${node.y0})`}
               tabIndex={isClickable ? 0 : -1}
               className={`outline-none ${isClickable ? "cursor-pointer" : "cursor-default"}`}
-              onMouseEnter={() => setHoveredTileIndex(i)}
+              onMouseEnter={() => {
+                setHoveredTileIndex(i);
+                if (onHoverTile) onHoverTile({ name: item.name, size: item.size });
+              }}
               onMouseLeave={() => {
                 setHoveredTileIndex((cur) => (cur === i ? null : cur));
                 setHoveredSubTileKey(null);
+                if (onHoverTile) onHoverTile(null);
               }}
               onClick={() => {
                 if (isClickable) triggerZoomAndDrill(node);
@@ -325,10 +332,12 @@ export const Treemap: React.FC<TreemapProps> = ({
                         onMouseEnter={(e) => {
                           e.stopPropagation();
                           setHoveredSubTileKey(childKey);
+                          if (onHoverTile) onHoverTile({ name: child.item.name, size: child.item.size });
                         }}
                         onMouseLeave={(e) => {
                           e.stopPropagation();
                           setHoveredSubTileKey(null);
+                          if (onHoverTile) onHoverTile({ name: item.name, size: item.size });
                         }}
                       >
                         <rect

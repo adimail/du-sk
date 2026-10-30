@@ -29,6 +29,14 @@ export interface ProgressPayload {
   live_tiles: LiveBucket[];
 }
 
+export interface DiskSpace {
+  total_bytes: number;
+  free_bytes: number;
+  available_bytes: number;
+  mount_point: string;
+  fs_type: string;
+}
+
 export interface ScanCompletePayload {
   total_bytes: number;
   total_files: number;
@@ -36,6 +44,7 @@ export interface ScanCompletePayload {
   unreadable_paths: string[];
   root_view: FolderViewResponse;
   scanned_path: string;
+  disk_space: DiskSpace | null;
 }
 
 export interface FolderPreset {
@@ -52,6 +61,11 @@ export interface SearchResultItem {
   is_dir: boolean;
 }
 
+export interface HoveredTileInfo {
+  name: string;
+  size: number;
+}
+
 export type ScanStatus = "idle" | "scanning" | "complete" | "cancelled" | "error";
 
 export interface ScanState {
@@ -59,6 +73,8 @@ export interface ScanState {
   progress: ProgressPayload | null;
   view: FolderViewResponse | null;
   totalFiles: number;
+  rootTotalBytes: number;
   duration: number;
+  diskSpace: DiskSpace | null;
   error: string | null;
 }

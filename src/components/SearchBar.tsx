@@ -148,15 +148,8 @@ export const SearchBar: React.FC<SearchBarProps> = ({
     }`;
 
   return (
-    <div ref={containerRef} className="relative flex items-center">
-      <div className="relative flex items-center">
-        <span className="absolute left-2.5 flex items-center justify-center w-3 h-3 text-zinc-500 text-[11px] pointer-events-none select-none">
-          {isSearching ? (
-            <span className="block w-3 h-3 rounded-full border-2 border-orange-400/30 border-t-orange-400 animate-spin" />
-          ) : (
-            "🔍"
-          )}
-        </span>
+    <div ref={containerRef} className="relative flex items-center h-9">
+      <div className="relative flex items-center h-9">
         <input
           ref={inputRef}
           type="text"
@@ -171,7 +164,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
             if (trimmedQuery.length >= 2) setIsOpen(true);
           }}
           onKeyDown={handleKeyDown}
-          className="h-7 w-48 sm:w-56 md:w-64 bg-white/5 border border-white/10 rounded-lg pl-8 pr-12 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-orange-500/50 focus:bg-white/[0.07] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+          className="h-9 w-48 sm:w-56 md:w-64 bg-white/5 border border-white/10 rounded-lg pl-3 pr-12 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-orange-500/50 focus:bg-white/[0.07] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
         />
         <div className="absolute right-2 flex items-center gap-1">
           {query ? (

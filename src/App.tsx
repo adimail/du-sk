@@ -2,12 +2,14 @@ import { useState } from "react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { Header } from "./components/Header";
 import { Treemap } from "./components/Treemap";
+import { WelcomeScreen } from "./components/WelcomeScreen";
 import { useFolderScan } from "./hooks/useFolderScan";
-import { SearchResultItem } from "./types";
+import { HoveredTileInfo, SearchResultItem } from "./types";
 import "./App.css";
 
 function App() {
   const [currentTargetPath, setCurrentTargetPath] = useState<string | null>(null);
+  const [hoveredTile, setHoveredTile] = useState<HoveredTileInfo | null>(null);
 
   const {
     scanState,
@@ -24,11 +26,13 @@ function App() {
   } = useFolderScan(currentTargetPath);
 
   function handleSelectPath(path: string) {
+    setHoveredTile(null);
     setCurrentTargetPath(path);
     startScan(path);
   }
 
   function handleRescan() {
+    setHoveredTile(null);
     const target = currentDirectoryPath || currentTargetPath || undefined;
     if (target) {
       setCurrentTargetPath(target);
@@ -48,23 +52,36 @@ function App() {
     }
   }
 
+  async function handleOpenCurrentFolder() {
+    if (!currentDirectoryPath) return;
+    try {
+      await revealItemInDir(currentDirectoryPath);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
   return (
     <div className="flex flex-col h-screen bg-[#0e0e11] overflow-hidden">
       <Header
         scanState={scanState}
         currentTargetPath={currentTargetPath}
         canGoUp={canGoUp}
+        hoveredTile={hoveredTile}
         onSelectPath={handleSelectPath}
         onNavigateBreadcrumb={navigateBreadcrumb}
         onNavigateSegments={navigateToSegments}
         onRevealItem={handleRevealItem}
+        onOpenInExplorer={handleOpenCurrentFolder}
         onGoUp={goUp}
         onCancelScan={cancelScan}
         onRescan={handleRescan}
       />
 
       <main className="flex-1 relative p-2 overflow-hidden min-h-0">
-        {scanState.status === "error" ? (
+        {scanState.status === "idle" && !currentTargetPath ? (
+          <WelcomeScreen onSelectPath={handleSelectPath} />
+        ) : scanState.status === "error" ? (
           <div className="flex flex-col items-center justify-center h-full gap-3">
             <div className="text-red-400 text-xs">{scanState.error}</div>
             <button
@@ -92,6 +109,7 @@ function App() {
             totalSize={activeTotal}
             onDrillDown={drillDown}
             canDrill={scanState.status === "complete"}
+            onHoverTile={setHoveredTile}
           />
         ) : (
           <div className="flex items-center justify-center h-full text-zinc-500 text-xs">

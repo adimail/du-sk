@@ -2,17 +2,19 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { formatBytes } from "../lib/utils";
-import { FolderPreset, SearchResultItem, ScanState } from "../types";
+import { FolderPreset, HoveredTileInfo, SearchResultItem, ScanState } from "../types";
 import { SearchBar } from "./SearchBar";
 
 interface HeaderProps {
   scanState: ScanState;
   currentTargetPath: string | null;
   canGoUp: boolean;
+  hoveredTile: HoveredTileInfo | null;
   onSelectPath: (path: string) => void;
   onNavigateBreadcrumb: (index: number) => void;
   onNavigateSegments: (segments: string[]) => void;
   onRevealItem?: (item: SearchResultItem) => void;
+  onOpenInExplorer?: () => void;
   onGoUp: () => void;
   onCancelScan: () => void;
   onRescan: () => void;
@@ -22,10 +24,12 @@ export const Header: React.FC<HeaderProps> = ({
   scanState,
   currentTargetPath,
   canGoUp,
+  hoveredTile,
   onSelectPath,
   onNavigateBreadcrumb,
   onNavigateSegments,
   onRevealItem,
+  onOpenInExplorer,
   onGoUp,
   onCancelScan,
   onRescan,
@@ -61,9 +65,7 @@ export const Header: React.FC<HeaderProps> = ({
       const parts = currentTargetPath.replace(/\/$/, "").split("/");
       return parts[parts.length - 1] || currentTargetPath;
     }
-    const homePreset = presets.find((p) => p.label.includes("Home"));
-    if (homePreset) return homePreset.label;
-    return "Home (~)";
+    return "Select Target…";
   }, [currentTargetPath, presets]);
 
   async function handlePickCustomFolder() {
@@ -80,8 +82,47 @@ export const Header: React.FC<HeaderProps> = ({
     } catch {}
   }
 
+  const diskSpace = scanState.diskSpace;
+  const currentFolderSize = scanState.view?.total_size || 0;
+  const rootTotalSize = scanState.rootTotalBytes || currentFolderSize;
+
+  const diskMetrics = useMemo(() => {
+    if (!diskSpace || diskSpace.total_bytes === 0) return null;
+
+    const total = diskSpace.total_bytes;
+    const free = diskSpace.available_bytes;
+    const used = total > free ? total - free : 0;
+
+    const currentFolder = currentFolderSize;
+    const otherScanned = rootTotalSize > currentFolder ? rootTotalSize - currentFolder : 0;
+    const totalScanned = currentFolder + otherScanned;
+    const otherUsed = used > totalScanned ? used - totalScanned : 0;
+
+    const currentFolderPctOfDrive = (currentFolder / total) * 100;
+    const currentFolderPctOfScan = rootTotalSize > 0 ? (currentFolder / rootTotalSize) * 100 : 100;
+    const otherScannedPct = (otherScanned / total) * 100;
+    const otherUsedPct = (otherUsed / total) * 100;
+    const freePct = Math.max(0, 100 - (currentFolderPctOfDrive + otherScannedPct + otherUsedPct));
+
+    return {
+      total,
+      used,
+      free,
+      currentFolder,
+      currentFolderPctOfDrive,
+      currentFolderPctOfScan,
+      otherScanned,
+      otherScannedPct,
+      otherUsedPct,
+      freePct,
+    };
+  }, [diskSpace, currentFolderSize, rootTotalSize]);
+
   const navButtonClass =
     "flex items-center justify-center w-7 h-7 rounded-md text-xs text-zinc-300 hover:bg-white/10 hover:text-zinc-100 disabled:text-zinc-600 disabled:hover:bg-transparent disabled:cursor-not-allowed cursor-pointer transition-colors";
+
+  const actionButtonClass =
+    "flex items-center justify-center h-9 px-4 rounded-lg text-xs font-medium cursor-pointer transition-colors";
 
   return (
     <header className="flex flex-col flex-shrink-0 z-40 bg-[#131317] border-b border-white/5">
@@ -111,7 +152,9 @@ export const Header: React.FC<HeaderProps> = ({
                 onClick={() => setDropdownOpen((prev) => !prev)}
                 className="flex items-center gap-1.5 h-7 px-2 rounded-md text-xs font-medium text-zinc-100 hover:bg-white/10 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                <span className="text-orange-400 font-semibold">{rootLabel}</span>
+                <span className={currentTargetPath ? "text-orange-400 font-semibold" : "text-zinc-400 font-normal"}>
+                  {rootLabel}
+                </span>
                 <span className="text-[9px] text-zinc-400">▾</span>
               </button>
 
@@ -176,10 +219,36 @@ export const Header: React.FC<HeaderProps> = ({
                 })}
               </nav>
             )}
+
+            <div className="flex items-center ml-auto flex-shrink-0 pl-1">
+              <button
+                type="button"
+                onClick={onOpenInExplorer}
+                disabled={isScanning || !scanState.view}
+                title="Open in File Explorer"
+                className="flex items-center justify-center w-7 h-7 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                  <polyline points="15 3 21 3 21 9" />
+                  <line x1="10" y1="14" x2="21" y2="3" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2 flex-shrink-0 h-9">
           <SearchBar
             currentPathSegments={currentPath}
             isScanning={isScanning}
@@ -191,7 +260,7 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               type="button"
               onClick={onCancelScan}
-              className="bg-white/5 text-zinc-300 border border-white/10 py-2 px-4.5 rounded-lg text-xs font-medium cursor-pointer hover:bg-white/10 transition-colors"
+              className={`${actionButtonClass} bg-white/5 text-zinc-300 border border-white/10 hover:bg-white/10`}
             >
               Cancel
             </button>
@@ -199,7 +268,8 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               type="button"
               onClick={onRescan}
-              className="bg-orange-600 text-white border-none py-2 px-4.5 rounded-lg text-xs font-medium cursor-pointer shadow-md shadow-orange-600/20 hover:bg-orange-500 transition-colors"
+              disabled={!currentTargetPath}
+              className={`${actionButtonClass} bg-orange-600 text-white border border-transparent hover:bg-orange-500 disabled:opacity-40 disabled:cursor-not-allowed`}
             >
               Rescan
             </button>
@@ -232,22 +302,87 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       )}
 
-      {scanState.status === "complete" && (scanState.view?.total_size || 0) > 0 && (
-        <div className="bg-[#111114] border-t border-white/5 h-6 px-4 text-[11px] text-zinc-500 flex justify-between items-center flex-shrink-0">
-          <div className="flex items-center gap-4">
+      {scanState.status === "complete" && currentFolderSize > 0 && (
+        <div className="bg-[#111114] border-t border-white/5 h-7 px-3 text-[11px] text-zinc-500 flex justify-between items-center flex-shrink-0 gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <span>
-              Total: <strong className="text-zinc-300 font-medium">{formatBytes(scanState.view?.total_size || 0)}</strong>
+              Folder: <strong className="text-zinc-200 font-medium">{formatBytes(currentFolderSize)}</strong>
             </span>
             <span className="text-zinc-700">·</span>
             <span>
               Files: <strong className="text-zinc-300 font-medium">{scanState.totalFiles.toLocaleString()}</strong>
             </span>
-            <span className="text-zinc-700">·</span>
-            <span>
-              Duration: <strong className="text-zinc-300 font-medium">{scanState.duration.toFixed(2)}s</strong>
-            </span>
+
+            {hoveredTile ? (
+              <>
+                <span className="text-zinc-700">·</span>
+                <div className="flex items-center gap-1.5 bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 rounded text-orange-300 min-w-0 truncate">
+                  <span className="font-semibold text-zinc-100 truncate">{hoveredTile.name}</span>
+                  <span className="text-orange-400/80">({formatBytes(hoveredTile.size)})</span>
+                  <span className="text-zinc-500 text-[10px]">
+                    {currentFolderSize > 0 ? ((hoveredTile.size / currentFolderSize) * 100).toFixed(1) : "0.0"}% of folder
+                    {diskMetrics ? ` · ${((hoveredTile.size / diskMetrics.total) * 100).toFixed(2)}% of drive` : ""}
+                  </span>
+                </div>
+              </>
+            ) : diskMetrics ? (
+              <>
+                <span className="text-zinc-700">·</span>
+                <span className="text-zinc-400">
+                  <strong className="text-orange-400/90 font-medium">{diskMetrics.currentFolderPctOfDrive.toFixed(1)}%</strong> of drive
+                  {subSegments.length > 0 && (
+                    <span className="text-zinc-500 ml-1">
+                      ({diskMetrics.currentFolderPctOfScan.toFixed(1)}% of scanned root)
+                    </span>
+                  )}
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="text-zinc-700">·</span>
+                <span>
+                  Duration: <strong className="text-zinc-300 font-medium">{scanState.duration.toFixed(2)}s</strong>
+                </span>
+              </>
+            )}
           </div>
-          <div className="text-zinc-500 text-[10px]">Ready</div>
+
+          {diskMetrics && (
+            <div className="flex items-center gap-2.5 flex-shrink-0 select-none">
+              <div className="flex items-center gap-1.5 text-[10px] text-zinc-400">
+                <span>Drive:</span>
+                <span className="text-zinc-200 font-medium">{formatBytes(diskMetrics.used)}</span>
+                <span className="text-zinc-600">/</span>
+                <span className="text-zinc-400">{formatBytes(diskMetrics.total)}</span>
+              </div>
+
+              <div
+                className="w-32 h-2 rounded-full bg-zinc-800 flex overflow-hidden border border-white/10"
+                title={`Active Folder: ${formatBytes(diskMetrics.currentFolder)} (${diskMetrics.currentFolderPctOfDrive.toFixed(1)}%)\nOther Scanned: ${formatBytes(diskMetrics.otherScanned)}\nOther Drive Space: ${formatBytes(diskMetrics.used - rootTotalSize)}\nFree: ${formatBytes(diskMetrics.free)}`}
+              >
+                <div
+                  style={{ width: `${Math.min(diskMetrics.currentFolderPctOfDrive, 100)}%` }}
+                  className="bg-orange-500 transition-all duration-150"
+                />
+                <div
+                  style={{ width: `${Math.min(diskMetrics.otherScannedPct, 100)}%` }}
+                  className="bg-orange-950 transition-all duration-150"
+                />
+                <div
+                  style={{ width: `${Math.min(diskMetrics.otherUsedPct, 100)}%` }}
+                  className="bg-zinc-600 transition-all duration-150"
+                />
+                <div
+                  style={{ width: `${Math.min(diskMetrics.freePct, 100)}%` }}
+                  className="bg-zinc-900 transition-all duration-150"
+                />
+              </div>
+
+              <span className="text-[10px] text-zinc-400 font-medium">
+                {formatBytes(diskMetrics.free)} free
+              </span>
+            </div>
+          )}
         </div>
       )}
     </header>
