@@ -3,15 +3,22 @@ mod format;
 mod render;
 mod terminal;
 
+use clap::Parser;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
 fn main() {
-    let cli_args = match args::parse_args() {
-        Ok(Some(args)) => args,
-        Ok(None) => return,
+    let cli = args::CliArgs::parse();
+
+    if cli.presets {
+        args::print_presets(&du_sk_core::get_preset_locations());
+        return;
+    }
+
+    let target_path = match cli.resolve_target_path() {
+        Ok(path) => path,
         Err(err) => {
             eprintln!("\x1b[1;31mError:\x1b[0m {}\n", err);
             std::process::exit(1);
@@ -23,7 +30,7 @@ fn main() {
     let cancel = Arc::new(AtomicBool::new(false));
     let progress = Arc::new(du_sk_core::ScanProgress::default());
 
-    let target_clone = cli_args.target_path.clone();
+    let target_clone = target_path.clone();
     let cancel_clone = cancel.clone();
     let progress_clone = progress.clone();
 
@@ -63,7 +70,7 @@ fn main() {
 
             render::print_summary_header(
                 &result,
-                &cli_args.target_path,
+                &target_path,
                 duration,
                 cancelled,
                 fallback_bytes,
@@ -75,18 +82,26 @@ fn main() {
                 return;
             }
 
-            if let Some(ref query) = cli_args.search_query {
+            if let Some(ref query) = cli.search {
                 let search_start = Instant::now();
                 let base_segments = vec![result.root_node.name.to_string()];
                 let search_results =
                     result
                         .root_node
-                        .search_subtree(&base_segments, query, cli_args.top_limit);
+                        .search_subtree(&base_segments, query, cli.top);
                 let search_duration = search_start.elapsed();
 
                 render::print_search_results(query, &search_results, search_duration);
             } else {
-                render::print_tree_distribution(&result, cli_args.top_limit, fallback_bytes);
+                let target_display = target_path.display().to_string();
+                render::print_tree_distribution(
+                    &result,
+                    &target_display,
+                    cli.depth,
+                    cli.min_size.unwrap_or(0),
+                    cli.top,
+                    fallback_bytes,
+                );
             }
         }
         Err(e) => {

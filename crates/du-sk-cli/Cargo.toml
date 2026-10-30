@@ -1,8 +1,9 @@
 [package]
-name = "du-sk-cli"
+name = "du-sk"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 du-sk-core = { path = "../du-sk-core" }
 libc = "0.2"
+clap = { version = "4", features = ["derive"] }

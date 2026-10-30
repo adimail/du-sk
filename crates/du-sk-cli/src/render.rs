@@ -1,10 +1,19 @@
 use crate::format::{format_bytes, format_number, render_bar, render_tri_bar};
 use crate::terminal::get_terminal_width;
-use du_sk_core::{ScanProgress, ScanResult, SearchResultItem};
+use du_sk_core::{FileNode, ScanProgress, ScanResult, SearchResultItem};
 use std::io::{self, Write};
 use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
+
+struct TreeRenderContext {
+    max_depth: usize,
+    min_size: u64,
+    top_limit: usize,
+    total_size: u64,
+    max_name_width: usize,
+    bar_width: usize,
+}
 
 fn truncate_str(s: &str, max_chars: usize) -> String {
     let char_count = s.chars().count();
@@ -250,7 +259,97 @@ pub fn print_search_results(query: &str, results: &[SearchResultItem], duration:
     println!(" \x1b[38;5;238m{}\x1b[0m\n", divider);
 }
 
-pub fn print_tree_distribution(result: &ScanResult, top_limit: usize, fallback_bytes: u64) {
+fn render_tree_children(
+    node: &FileNode,
+    current_depth: usize,
+    prefix: &str,
+    ctx: &TreeRenderContext,
+) {
+    let eligible: Vec<&FileNode> = node
+        .children
+        .iter()
+        .filter(|c| c.size >= ctx.min_size)
+        .collect();
+
+    let total_eligible = eligible.len();
+    let visible_count = total_eligible.min(ctx.top_limit);
+    let has_rest = total_eligible > ctx.top_limit;
+
+    for (i, child) in eligible.iter().take(visible_count).enumerate() {
+        let is_last = !has_rest && i == visible_count - 1;
+        let connector = if is_last { "└── " } else { "├── " };
+        let child_prefix = format!("{}{}", prefix, connector);
+
+        let (tag, tag_style) = if child.is_dir {
+            ("DIR ", "\x1b[38;5;208m")
+        } else {
+            ("FILE", "\x1b[38;5;244m")
+        };
+
+        let ratio = if ctx.total_size > 0 {
+            child.size as f64 / ctx.total_size as f64
+        } else {
+            0.0
+        };
+        let bar = render_bar(ratio, ctx.bar_width);
+
+        let prefix_len = child_prefix.chars().count();
+        let avail_name_width = ctx.max_name_width.saturating_sub(prefix_len).max(10);
+        let name_truncated = truncate_str(&child.name, avail_name_width);
+
+        println!(
+            " {tag_style}[{tag}]\x1b[0m \x1b[1;37m{:>10}\x1b[0m  \x1b[1;37m{:>10}\x1b[0m  \x1b[38;5;208m{}\x1b[0m  \x1b[38;5;244m{}\x1b[0m\x1b[1;37m{}\x1b[0m",
+            format_bytes(child.size),
+            format_number(child.file_count),
+            bar,
+            child_prefix,
+            name_truncated
+        );
+
+        if child.is_dir && current_depth < ctx.max_depth {
+            let child_indent = if is_last { "    " } else { "│   " };
+            let next_prefix = format!("{}{}", prefix, child_indent);
+            render_tree_children(child, current_depth + 1, &next_prefix, ctx);
+        }
+    }
+
+    if has_rest {
+        let rest_bytes: u64 = eligible[visible_count..].iter().map(|c| c.size).sum();
+        let rest_files: u64 = eligible[visible_count..].iter().map(|c| c.file_count).sum();
+        let rest_count = total_eligible - visible_count;
+
+        let rest_prefix = format!("{}└── ", prefix);
+        let rest_ratio = if ctx.total_size > 0 {
+            rest_bytes as f64 / ctx.total_size as f64
+        } else {
+            0.0
+        };
+        let rest_bar = render_bar(rest_ratio, ctx.bar_width);
+        let rest_label = format!("{} other items", format_number(rest_count as u64));
+
+        let prefix_len = rest_prefix.chars().count();
+        let avail_name_width = ctx.max_name_width.saturating_sub(prefix_len).max(10);
+        let rest_truncated = truncate_str(&rest_label, avail_name_width);
+
+        println!(
+            " \x1b[38;5;242m[REST]\x1b[0m \x1b[1;37m{:>10}\x1b[0m  \x1b[1;37m{:>10}\x1b[0m  \x1b[38;5;242m{}\x1b[0m  \x1b[38;5;244m{}\x1b[0m\x1b[38;5;242m{}\x1b[0m",
+            format_bytes(rest_bytes),
+            format_number(rest_files),
+            rest_bar,
+            rest_prefix,
+            rest_truncated
+        );
+    }
+}
+
+pub fn print_tree_distribution(
+    result: &ScanResult,
+    target_display_name: &str,
+    max_depth: usize,
+    min_size: u64,
+    top_limit: usize,
+    fallback_bytes: u64,
+) {
     let width = get_terminal_width();
     let divider = "─".repeat(width.saturating_sub(2));
 
@@ -260,64 +359,50 @@ pub fn print_tree_distribution(result: &ScanResult, top_limit: usize, fallback_b
         fallback_bytes
     };
 
+    if min_size > 0 && total_size < min_size {
+        println!(
+            "  \x1b[38;5;244mNo entries found matching minimum size threshold of {}.\x1b[0m\n",
+            format_bytes(min_size)
+        );
+        return;
+    }
+
     let bar_width = 16;
-    let max_name_width = width.saturating_sub(50).max(20);
+    let max_name_width = width.saturating_sub(52).max(20);
 
     println!(
-        " \x1b[38;5;240m{:<6} {:>10}  {:>10}    {:<16}  NAME\x1b[0m",
+        " \x1b[38;5;240m{:<6} {:>10}  {:>10}    {:<16}  NAME / PATH\x1b[0m",
         "KIND", "SIZE", "FILES", "DISTRIBUTION"
     );
     println!(" \x1b[38;5;238m{}\x1b[0m", divider);
 
-    let visible_items: Vec<_> = result.root_node.children.iter().take(top_limit).collect();
-    let mut displayed_bytes = 0u64;
+    let root_ratio = if total_size > 0 {
+        (result.root_node.size as f64 / total_size as f64).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let root_bar = render_bar(root_ratio, bar_width);
+    let root_name_truncated = truncate_str(target_display_name, max_name_width);
 
-    for item in &visible_items {
-        displayed_bytes += item.size;
-        let ratio = if total_size > 0 {
-            item.size as f64 / total_size as f64
-        } else {
-            0.0
-        };
+    println!(
+        " \x1b[38;5;208m[DIR ]\x1b[0m \x1b[1;37m{:>10}\x1b[0m  \x1b[1;37m{:>10}\x1b[0m  \x1b[38;5;208m{}\x1b[0m  \x1b[1;37m{}\x1b[0m",
+        format_bytes(result.root_node.size),
+        format_number(result.root_node.file_count),
+        root_bar,
+        root_name_truncated
+    );
 
-        let (tag, tag_style) = if item.is_dir {
-            ("DIR ", "\x1b[38;5;208m")
-        } else {
-            ("FILE", "\x1b[38;5;244m")
-        };
+    let ctx = TreeRenderContext {
+        max_depth,
+        min_size,
+        top_limit,
+        total_size,
+        max_name_width,
+        bar_width,
+    };
 
-        let name_truncated = truncate_str(&item.name, max_name_width);
-        let bar = render_bar(ratio, bar_width);
-
-        println!(
-            " {tag_style}[{tag}]\x1b[0m \x1b[1;37m{:>10}\x1b[0m  \x1b[1;37m{:>10}\x1b[0m  \x1b[38;5;208m{}\x1b[0m  \x1b[1;37m{}\x1b[0m",
-            format_bytes(item.size),
-            format_number(item.file_count),
-            bar,
-            name_truncated
-        );
-    }
-
-    let remainder_count = result.root_node.children.len().saturating_sub(top_limit);
-    let remainder_bytes = total_size.saturating_sub(displayed_bytes);
-    let remainder_files = result
-        .root_node
-        .children
-        .iter()
-        .skip(top_limit)
-        .map(|c| c.file_count)
-        .sum::<u64>();
-
-    if remainder_count > 0 && remainder_bytes > 0 {
-        let rem_ratio = remainder_bytes as f64 / total_size as f64;
-        let rem_bar = render_bar(rem_ratio, bar_width);
-        println!(
-            " \x1b[38;5;242m[REST] {:>10}  {:>10}    \x1b[38;5;242m{}\x1b[0m  {} other items\x1b[0m",
-            format_bytes(remainder_bytes),
-            format_number(remainder_files),
-            rem_bar,
-            format_number(remainder_count as u64)
-        );
+    if max_depth >= 1 {
+        render_tree_children(&result.root_node, 1, "", &ctx);
     }
 
     println!(" \x1b[38;5;238m{}\x1b[0m\n", divider);

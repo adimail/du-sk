@@ -1,36 +1,171 @@
+use clap::Parser;
 use du_sk_core::{get_preset_locations, PresetLocation};
-use std::env;
 use std::fs;
 use std::path::PathBuf;
 
+const EXAMPLES: &str = "Examples:
+  du-sk                                    Inspect home directory down to depth 2
+  du-sk ~/Library                          Inspect ~/Library
+  du-sk downloads -d 3                     Inspect downloads preset down to depth 3
+  du-sk ~ -d 3 -m 500M                     Filter items at least 500 MB up to depth 3
+  du-sk /var/log -n 5                      Show top 5 items per directory in /var/log
+  du-sk ~ -s \"report.pdf\"                  Search for \"report.pdf\" in home directory
+  du-sk -p                                 List available preset shortcuts";
+
+#[derive(Parser, Debug)]
+#[command(
+    name = "du-sk",
+    about = "Fast terminal disk space inspector",
+    version,
+    after_help = EXAMPLES
+)]
 pub struct CliArgs {
-    pub target_path: PathBuf,
-    pub search_query: Option<String>,
-    pub top_limit: usize,
+    #[arg(
+        value_name = "TARGET | PRESET",
+        help = "Target directory path or preset key (e.g. home, downloads, library)"
+    )]
+    pub target: Option<String>,
+
+    #[arg(
+        short = 'd',
+        long = "depth",
+        default_value_t = 2,
+        value_parser = validate_min_one,
+        help = "Maximum directory tree depth to display"
+    )]
+    pub depth: usize,
+
+    #[arg(
+        short = 'm',
+        long = "min-size",
+        value_parser = parse_human_size,
+        help = "Minimum item size threshold to display (e.g. 500M, 1.5GB)"
+    )]
+    pub min_size: Option<u64>,
+
+    #[arg(
+        short = 'n',
+        long = "top",
+        default_value_t = 10,
+        value_parser = validate_min_one,
+        help = "Maximum number of items to display per branch"
+    )]
+    pub top: usize,
+
+    #[arg(
+        short = 's',
+        long = "search",
+        help = "Search for files and directories matching a query string"
+    )]
+    pub search: Option<String>,
+
+    #[arg(
+        short = 'p',
+        long = "presets",
+        help = "List available preset target shortcuts and exit"
+    )]
+    pub presets: bool,
 }
 
-fn print_help(presets: &[PresetLocation]) {
-    println!("\x1b[1;38;5;208mdu-sk-cli\x1b[0m - Fast terminal disk space inspector\n");
-    println!("\x1b[1;37mUSAGE:\x1b[0m");
-    println!("  du-sk-cli [TARGET | PRESET] [-s <QUERY>] [-n <N>]\n");
-    println!("\x1b[1;37mPRESETS:\x1b[0m");
-    for p in presets {
-        println!(
-            "  \x1b[38;5;208m{:<12}\x1b[0m \x1b[38;5;244m{}\x1b[0m",
-            p.key,
-            p.path.display()
-        );
+fn validate_min_one(s: &str) -> Result<usize, String> {
+    let val: usize = s
+        .parse()
+        .map_err(|_| format!("'{}' is not a valid number", s))?;
+    if val == 0 {
+        return Err("Value must be at least 1".to_string());
     }
-    println!("\n\x1b[1;37mOPTIONS:\x1b[0m");
-    println!(
-        "  \x1b[38;5;208m-s, --search <QUERY>\x1b[0m  Search across all scanned files and folders"
-    );
-    println!("  \x1b[38;5;208m-n, --top <N>\x1b[0m        Number of items to show (default: 15)");
-    println!("  \x1b[38;5;208m-p, --presets\x1b[0m        List available preset targets");
-    println!("  \x1b[38;5;208m-h, --help\x1b[0m            Show help information\n");
+    Ok(val)
 }
 
-fn print_presets(presets: &[PresetLocation]) {
+pub fn parse_human_size(s: &str) -> Result<u64, String> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return Err("Size cannot be empty".to_string());
+    }
+    if trimmed.starts_with('-') {
+        return Err("Size cannot be negative".to_string());
+    }
+
+    let split_pos = trimmed
+        .find(|c: char| !c.is_ascii_digit() && c != '.')
+        .unwrap_or(trimmed.len());
+
+    let (num_part, unit_part) = trimmed.split_at(split_pos);
+    if num_part.is_empty() {
+        return Err(format!("Invalid size: '{}'", s));
+    }
+
+    let number: f64 = num_part
+        .parse()
+        .map_err(|_| format!("Invalid numeric value in size: '{}'", num_part))?;
+
+    if number < 0.0 || number.is_nan() || number.is_infinite() {
+        return Err(format!(
+            "Size must be a valid positive number: '{}'",
+            num_part
+        ));
+    }
+
+    let unit = unit_part.trim().to_ascii_lowercase();
+    let multiplier: f64 = match unit.as_str() {
+        "" | "b" | "bytes" => 1.0,
+        "k" | "kb" | "kib" => 1024.0,
+        "m" | "mb" | "mib" => 1024.0 * 1024.0,
+        "g" | "gb" | "gib" => 1024.0 * 1024.0 * 1024.0,
+        "t" | "tb" | "tib" => 1024.0 * 1024.0 * 1024.0 * 1024.0,
+        _ => return Err(format!("Unknown size unit: '{}'", unit_part)),
+    };
+
+    let total = number * multiplier;
+    if total > u64::MAX as f64 {
+        return Err("Size exceeds maximum allowed limit".to_string());
+    }
+
+    Ok(total.round() as u64)
+}
+
+impl CliArgs {
+    pub fn resolve_target_path(&self) -> Result<PathBuf, String> {
+        let presets = get_preset_locations();
+        let raw_path = if let Some(ref target_input) = self.target {
+            if let Some(matched) = presets
+                .iter()
+                .find(|p| p.key.eq_ignore_ascii_case(target_input))
+            {
+                matched.path.clone()
+            } else {
+                PathBuf::from(target_input)
+            }
+        } else {
+            presets
+                .iter()
+                .find(|p| p.key == "home")
+                .map(|p| p.path.clone())
+                .unwrap_or_else(|| PathBuf::from("."))
+        };
+
+        let target_path = match fs::canonicalize(&raw_path) {
+            Ok(canonical) => canonical,
+            Err(_) => {
+                return Err(format!(
+                    "Target path does not exist: {}",
+                    raw_path.display()
+                ));
+            }
+        };
+
+        if !target_path.is_dir() {
+            return Err(format!(
+                "Target path is not a directory: {}",
+                target_path.display()
+            ));
+        }
+
+        Ok(target_path)
+    }
+}
+
+pub fn print_presets(presets: &[PresetLocation]) {
     println!("\x1b[1;37mAvailable Presets:\x1b[0m\n");
     for p in presets {
         println!(
@@ -43,85 +178,28 @@ fn print_presets(presets: &[PresetLocation]) {
     println!();
 }
 
-pub fn parse_args() -> Result<Option<CliArgs>, String> {
-    let presets = get_preset_locations();
-    let args: Vec<String> = env::args().skip(1).collect();
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    let mut target_str: Option<String> = None;
-    let mut search_query: Option<String> = None;
-    let mut top_limit: usize = 15;
-
-    let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
-            "-h" | "--help" => {
-                print_help(&presets);
-                return Ok(None);
-            }
-            "-p" | "--presets" => {
-                print_presets(&presets);
-                return Ok(None);
-            }
-            "-s" | "--search" => {
-                if i + 1 < args.len() {
-                    search_query = Some(args[i + 1].clone());
-                    i += 1;
-                }
-            }
-            "-n" | "--top" => {
-                if i + 1 < args.len() {
-                    if let Ok(val) = args[i + 1].parse::<usize>() {
-                        top_limit = val.max(1);
-                    }
-                    i += 1;
-                }
-            }
-            other => {
-                if !other.starts_with('-') && target_str.is_none() {
-                    target_str = Some(other.to_string());
-                }
-            }
-        }
-        i += 1;
+    #[test]
+    fn test_parse_human_size_units() {
+        assert_eq!(parse_human_size("1024").unwrap(), 1024);
+        assert_eq!(parse_human_size("1k").unwrap(), 1024);
+        assert_eq!(parse_human_size("1K").unwrap(), 1024);
+        assert_eq!(parse_human_size("1KB").unwrap(), 1024);
+        assert_eq!(parse_human_size("1kb").unwrap(), 1024);
+        assert_eq!(parse_human_size("500M").unwrap(), 524_288_000);
+        assert_eq!(parse_human_size("500mb").unwrap(), 524_288_000);
+        assert_eq!(parse_human_size("1.5G").unwrap(), 1_610_612_736);
+        assert_eq!(parse_human_size("1.5gb").unwrap(), 1_610_612_736);
     }
 
-    let raw_target_path = if let Some(target_input) = target_str {
-        if let Some(matched) = presets
-            .iter()
-            .find(|p| p.key.eq_ignore_ascii_case(&target_input))
-        {
-            matched.path.clone()
-        } else {
-            PathBuf::from(target_input)
-        }
-    } else {
-        presets
-            .iter()
-            .find(|p| p.key == "home")
-            .map(|p| p.path.clone())
-            .unwrap_or_else(|| PathBuf::from("."))
-    };
-
-    let target_path = match fs::canonicalize(&raw_target_path) {
-        Ok(canonical) => canonical,
-        Err(_) => {
-            return Err(format!(
-                "Target path does not exist: {}",
-                raw_target_path.display()
-            ));
-        }
-    };
-
-    if !target_path.is_dir() {
-        return Err(format!(
-            "Target path is not a directory: {}",
-            target_path.display()
-        ));
+    #[test]
+    fn test_parse_human_size_invalid() {
+        assert!(parse_human_size("").is_err());
+        assert!(parse_human_size("-50M").is_err());
+        assert!(parse_human_size("abc").is_err());
+        assert!(parse_human_size("12X").is_err());
     }
-
-    Ok(Some(CliArgs {
-        target_path,
-        search_query,
-        top_limit,
-    }))
 }

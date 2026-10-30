@@ -6,8 +6,6 @@ A fast, interactive disk space analyzer with treemap visualization.
 
 ## Screenshots
 
-### CLI Interface
-![CLI Interface](https://orion-static-cdn.pages.dev/assets/c55ea1c2-2159-4cbd-b273-2733ed38263e.png)
+![CLI Interface](https://orion-static-cdn.pages.dev/assets/e4df174d-c03a-4454-a89b-f1c923d6ad90.gif)
 
-### Mac App
-![Mac App](https://orion-static-cdn.pages.dev/assets/7eaea2c3-47af-4b28-84e3-6fa786c927b5.png)
+![Mac App](https://orion-static-cdn.pages.dev/assets/081a1cbc-0c4f-4bff-a1fd-852cc9117637.gif)
