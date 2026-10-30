@@ -1,4 +1,5 @@
 use std::env;
+use std::fs;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -134,7 +135,7 @@ fn print_help(presets: &[Preset]) {
     );
     println!("  \x1b[38;5;208m-n, --top <N>\x1b[0m        Number of items to show (default: 15)");
     println!("  \x1b[38;5;208m-p, --presets\x1b[0m        List available preset targets");
-    println!("  \x1b[38;5;208m-h, --help\x1b[0m           Show help information\n");
+    println!("  \x1b[38;5;208m-h, --help\x1b[0m            Show help information\n");
 }
 
 fn main() {
@@ -188,7 +189,7 @@ fn main() {
         i += 1;
     }
 
-    let target_path = if let Some(target_input) = target_str {
+    let raw_target_path = if let Some(target_input) = target_str {
         if let Some(matched) = presets
             .iter()
             .find(|p| p.key.eq_ignore_ascii_case(&target_input))
@@ -200,25 +201,31 @@ fn main() {
     } else {
         presets
             .iter()
-            .find(|p| p.key == "library")
+            .find(|p| p.key == "home")
             .map(|p| p.path.clone())
             .unwrap_or_else(|| PathBuf::from("."))
     };
 
-    if !target_path.exists() {
+    let target_path = match fs::canonicalize(&raw_target_path) {
+        Ok(canonical) => canonical,
+        Err(_) => {
+            eprintln!(
+                "\x1b[1;31mError:\x1b[0m Target path does not exist: {}",
+                raw_target_path.display()
+            );
+            std::process::exit(1);
+        }
+    };
+
+    if !target_path.is_dir() {
         eprintln!(
-            "\x1b[1;31mError:\x1b[0m Target path does not exist: {}",
+            "\x1b[1;31mError:\x1b[0m Target path is not a directory: {}",
             target_path.display()
         );
         std::process::exit(1);
     }
 
     println!("\x1b[2J\x1b[H\x1b[?25l");
-    println!("\x1b[1;38;5;208mdu-sk\x1b[0m \x1b[38;5;244m— disk space visualizer\x1b[0m");
-    println!(
-        "\x1b[38;5;240mTarget:\x1b[0m \x1b[1;37m{}\x1b[0m\n",
-        target_path.display()
-    );
 
     let cancel = Arc::new(AtomicBool::new(false));
     let progress = Arc::new(du_sk_core::ScanProgress::default());
@@ -311,24 +318,24 @@ fn main() {
             };
 
             if cancelled {
-                println!("\x1b[1;38;5;208m┌─ Scan Overview \x1b[38;5;203m(Cancelled — Partial Results)\x1b[1;38;5;208m ──────────────────────────┐\x1b[0m");
+                println!("\x1b[1;38;5;208m┌─ du-sk \x1b[38;5;203m(Cancelled — Partial Results)\x1b[1;38;5;208m ────────────────────────────────────────┐\x1b[0m");
             } else {
-                println!("\x1b[1;38;5;208m┌─ Scan Overview ─────────────────────────────────────────────────────────────┐\x1b[0m");
+                println!("\x1b[1;38;5;208m┌─ du-sk ──────────────────────────────────────────────────────────────────────┐\x1b[0m");
             }
 
             println!(
-                "\x1b[1;38;5;208m│\x1b[0m Target:   \x1b[1;37m{:<66}\x1b[0m \x1b[1;38;5;208m│\x1b[0m",
+                "\x1b[1;38;5;208m│\x1b[0m Target:    \x1b[1;37m{:<65}\x1b[0m \x1b[1;38;5;208m│\x1b[0m",
                 target_path.display()
             );
             println!(
-                "\x1b[1;38;5;208m│\x1b[0m Total:    \x1b[1;38;5;208m{:<12}\x1b[0m  Files: \x1b[1;37m{:<12}\x1b[0m  Time: \x1b[38;5;244m{:<9.2?} \x1b[0m Errors: \x1b[38;5;{}m{:<5}\x1b[0m \x1b[1;38;5;208m│\x1b[0m",
+                "\x1b[1;38;5;208m│\x1b[0m Total:     \x1b[1;38;5;208m{:<12}\x1b[0m  Files: \x1b[1;37m{:<12}\x1b[0m  Time: \x1b[38;5;244m{:<9.2?} \x1b[0m Errors: \x1b[38;5;{}m{:<5}\x1b[0m \x1b[1;38;5;208m│\x1b[0m",
                 format_bytes(total_size),
                 format_number(total_files),
                 duration,
                 if result.unreadable_paths.is_empty() { 244 } else { 203 },
                 result.unreadable_paths.len()
             );
-            println!("\x1b[1;38;5;208m└─────────────────────────────────────────────────────────────────────────────┘\x1b[0m\n");
+            println!("\x1b[1;38;5;208m└──────────────────────────────────────────────────────────────────────────────┘\x1b[0m\n");
 
             if result.root_node.children.is_empty() {
                 println!("  \x1b[38;5;244mNo items collected before cancellation.\x1b[0m\n");
@@ -392,8 +399,8 @@ fn main() {
 
             let max_name_width = 30;
             println!(
-                " \x1b[38;5;240m{:<6} {:>10}  {:>6}   {:<16}  NAME\x1b[0m",
-                "KIND", "SIZE", "SHARE", "DISTRIBUTION"
+                " \x1b[38;5;240m{:<6} {:>10}  {:>10}    {:<16}  NAME\x1b[0m",
+                "KIND", "SIZE", "FILES", "DISTRIBUTION"
             );
             println!(" \x1b[38;5;238m{}\x1b[0m", "─".repeat(77));
 
@@ -407,7 +414,6 @@ fn main() {
                 } else {
                     0.0
                 };
-                let share_percent = ratio * 100.0;
 
                 let (tag, tag_style) = if item.is_dir {
                     ("DIR ", "\x1b[38;5;208m")
@@ -424,9 +430,9 @@ fn main() {
                 let bar = render_bar(ratio, 16);
 
                 println!(
-                    " {tag_style}[{tag}]\x1b[0m \x1b[1;37m{:>10}\x1b[0m  {:>5.1}%   \x1b[38;5;208m{}\x1b[0m  \x1b[1;37m{}\x1b[0m",
+                    " {tag_style}[{tag}]\x1b[0m \x1b[1;37m{:>10}\x1b[0m  \x1b[1;37m{:>10}\x1b[0m  \x1b[38;5;208m{}\x1b[0m  \x1b[1;37m{}\x1b[0m",
                     format_bytes(item.size),
-                    share_percent,
+                    format_number(item.file_count),
                     bar,
                     name_truncated
                 );
@@ -434,14 +440,21 @@ fn main() {
 
             let remainder_count = result.root_node.children.len().saturating_sub(top_limit);
             let remainder_bytes = total_size.saturating_sub(displayed_bytes);
+            let remainder_files = result
+                .root_node
+                .children
+                .iter()
+                .skip(top_limit)
+                .map(|c| c.file_count)
+                .sum::<u64>();
 
             if remainder_count > 0 && remainder_bytes > 0 {
                 let rem_ratio = remainder_bytes as f64 / total_size as f64;
                 let rem_bar = render_bar(rem_ratio, 16);
                 println!(
-                    " \x1b[38;5;242m[REST] {:>10}  {:>5.1}%   \x1b[38;5;242m{}\x1b[0m  {} other items\x1b[0m",
+                    " \x1b[38;5;242m[REST] {:>10}  {:>10}    \x1b[38;5;242m{}\x1b[0m  {} other items\x1b[0m",
                     format_bytes(remainder_bytes),
-                    rem_ratio * 100.0,
+                    format_number(remainder_files),
                     rem_bar,
                     format_number(remainder_count as u64)
                 );

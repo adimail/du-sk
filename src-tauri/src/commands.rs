@@ -4,6 +4,7 @@ use du_sk_core::{
     scan_directory,
 };
 use serde::Serialize;
+use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
@@ -40,12 +41,7 @@ pub struct FolderPreset {
 #[tauri::command]
 pub fn get_default_target() -> String {
     std::env::var("HOME")
-        .map(|h| {
-            PathBuf::from(h)
-                .join("Library")
-                .to_string_lossy()
-                .to_string()
-        })
+        .map(|h| PathBuf::from(h).to_string_lossy().to_string())
         .unwrap_or_else(|_| ".".into())
 }
 
@@ -124,11 +120,22 @@ pub fn start_scan(
         return Err("A scan is already in progress.".into());
     }
 
-    let target = target_path
+    let raw_target = target_path
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(get_default_target()));
 
-    if !target.exists() || !target.is_dir() {
+    let target = match fs::canonicalize(&raw_target) {
+        Ok(canonical) => canonical,
+        Err(_) => {
+            state.is_scanning.store(false, Ordering::Relaxed);
+            return Err(format!(
+                "Path is not a valid directory: {}",
+                raw_target.display()
+            ));
+        }
+    };
+
+    if !target.is_dir() {
         state.is_scanning.store(false, Ordering::Relaxed);
         return Err(format!(
             "Path is not a valid directory: {}",

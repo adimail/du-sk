@@ -60,7 +60,9 @@ export const Header: React.FC<HeaderProps> = ({
       const parts = currentTargetPath.replace(/\/$/, "").split("/");
       return parts[parts.length - 1] || currentTargetPath;
     }
-    return "Library";
+    const homePreset = presets.find((p) => p.label.includes("Home"));
+    if (homePreset) return homePreset.label;
+    return "Home (~)";
   }, [currentTargetPath, presets]);
 
   async function handlePickCustomFolder() {
@@ -246,3 +248,5 @@ export const Header: React.FC<HeaderProps> = ({
     </header>
   );
 };
+
+
