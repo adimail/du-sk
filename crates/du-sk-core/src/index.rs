@@ -21,14 +21,16 @@ struct IndexEntry {
 }
 
 pub struct SearchIndex {
+    root_path: String,
     entries: Vec<IndexEntry>,
     lower_names: String,
     original_names: HashMap<u32, Box<str>>,
 }
 
 impl SearchIndex {
-    pub fn build(root: &FileNode) -> Self {
+    pub fn build(root: &FileNode, root_path: &str) -> Self {
         let mut index = SearchIndex {
+            root_path: root_path.trim_end_matches('/').to_string(),
             entries: Vec::new(),
             lower_names: String::new(),
             original_names: HashMap::new(),
@@ -167,6 +169,11 @@ impl SearchIndex {
             .collect();
 
         let mut merged: Vec<Candidate> = partials?.into_iter().flatten().collect();
+
+        if latest.load(Ordering::Relaxed) != request_id {
+            return None;
+        }
+
         merged.sort_unstable_by(|a, b| b.cmp(a));
         merged.truncate(limit);
 
@@ -224,6 +231,22 @@ impl SearchIndex {
         }
         relative.reverse();
 
+        let mut abs_parts: Vec<&str> = Vec::new();
+        let mut full_scan = idx;
+        while full_scan != 0 && full_scan != NO_PARENT {
+            abs_parts.push(self.name_at(full_scan));
+            full_scan = self.entries[full_scan as usize].parent;
+        }
+        abs_parts.reverse();
+
+        let absolute_path = if abs_parts.is_empty() {
+            self.root_path.clone()
+        } else if self.root_path.is_empty() {
+            format!("/{}", abs_parts.join("/"))
+        } else {
+            format!("{}/{}", self.root_path, abs_parts.join("/"))
+        };
+
         let entry = &self.entries[idx as usize];
         let mut path_segments = base_segments.to_vec();
         path_segments.extend(relative.iter().map(|s| s.to_string()));
@@ -232,6 +255,7 @@ impl SearchIndex {
             name: self.name_at(idx).to_string(),
             path_segments,
             relative_path: relative.join("/"),
+            absolute_path,
             size: entry.size,
             is_dir: entry.is_dir,
         }
@@ -245,7 +269,7 @@ impl FileNode {
         query: &str,
         limit: usize,
     ) -> Vec<SearchResultItem> {
-        let index = SearchIndex::build(self);
+        let index = SearchIndex::build(self, "");
         let latest = AtomicU64::new(0);
         index
             .search_from(0, base_segments, query, limit, &latest, 0)

@@ -3,10 +3,12 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
-use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiskSpace {
@@ -102,6 +104,12 @@ fn extract_fs_info(stat: &libc::statfs) -> (String, String) {
     (mount_point, fs_type)
 }
 
+#[cfg(all(unix, not(target_os = "macos")))]
+fn extract_fs_info(_stat: &libc::statfs) -> (String, String) {
+    ("".to_string(), "".to_string())
+}
+
+#[cfg(unix)]
 pub fn get_disk_space(path: &Path) -> Option<DiskSpace> {
     use std::os::unix::ffi::OsStrExt;
 
@@ -125,6 +133,11 @@ pub fn get_disk_space(path: &Path) -> Option<DiskSpace> {
         mount_point,
         fs_type,
     })
+}
+
+#[cfg(not(unix))]
+pub fn get_disk_space(_path: &Path) -> Option<DiskSpace> {
+    None
 }
 
 pub fn scan_directory(
@@ -238,7 +251,7 @@ pub fn scan_directory(
             ctx.progress.set_current_path(&path.to_string_lossy());
 
             if meta.is_dir() {
-                let node = scan_dir_recursive(&path, &file_name, &ctx, Some(&bucket));
+                let node = scan_dir_recursive(&path, &file_name, &ctx, Some(&bucket), 1);
                 Some(node)
             } else {
                 let mut size = meta.blocks() * 512;
@@ -283,6 +296,7 @@ fn scan_dir_recursive(
     name: &str,
     ctx: &Arc<ScanContext>,
     parent_bucket: Option<&Arc<TopLevelBucket>>,
+    depth: usize,
 ) -> FileNode {
     let mut node = FileNode::new_dir(name);
 
@@ -325,59 +339,71 @@ fn scan_dir_recursive(
         }
     }
 
-    let children: Vec<FileNode> = entries
-        .into_par_iter()
-        .filter_map(|entry| {
-            if ctx.cancel_token.load(Ordering::Relaxed) {
-                return None;
-            }
+    let process_entry = |entry: fs::DirEntry| -> Option<FileNode> {
+        if ctx.cancel_token.load(Ordering::Relaxed) {
+            return None;
+        }
 
-            let path = entry.path();
-            let meta = match fs::symlink_metadata(&path) {
-                Ok(m) => m,
-                Err(err) => {
-                    if err.kind() != std::io::ErrorKind::NotFound {
-                        ctx.progress.errors_count.fetch_add(1, Ordering::Relaxed);
-                        if let Ok(mut paths) = ctx.unreadable_paths.lock() {
-                            paths.push(path);
-                        }
+        let path = entry.path();
+        let meta = match fs::symlink_metadata(&path) {
+            Ok(m) => m,
+            Err(err) => {
+                if err.kind() != std::io::ErrorKind::NotFound {
+                    ctx.progress.errors_count.fetch_add(1, Ordering::Relaxed);
+                    if let Ok(mut paths) = ctx.unreadable_paths.lock() {
+                        paths.push(path);
                     }
-                    return None;
                 }
-            };
-
-            if meta.file_type().is_symlink() || meta.dev() != ctx.root_dev {
                 return None;
             }
+        };
 
-            let file_name = entry.file_name().to_string_lossy().to_string();
+        if meta.file_type().is_symlink() || meta.dev() != ctx.root_dev {
+            return None;
+        }
+
+        let file_name = entry.file_name().to_string_lossy().to_string();
+
+        if depth <= 2 {
             ctx.progress.set_current_path(&path.to_string_lossy());
+        }
 
-            if meta.is_dir() {
-                Some(scan_dir_recursive(&path, &file_name, ctx, parent_bucket))
-            } else {
-                let mut size = meta.blocks() * 512;
-                if meta.nlink() > 1 {
-                    let key = (meta.dev(), meta.ino());
-                    let mut seen = ctx.seen_inodes.lock().unwrap();
-                    if !seen.insert(key) {
-                        size = 0;
-                    }
+        if meta.is_dir() {
+            Some(scan_dir_recursive(
+                &path,
+                &file_name,
+                ctx,
+                parent_bucket,
+                depth + 1,
+            ))
+        } else {
+            let mut size = meta.blocks() * 512;
+            if meta.nlink() > 1 {
+                let key = (meta.dev(), meta.ino());
+                let mut seen = ctx.seen_inodes.lock().unwrap();
+                if !seen.insert(key) {
+                    size = 0;
                 }
-
-                if let Some(bucket) = parent_bucket {
-                    bucket.size.fetch_add(size, Ordering::Relaxed);
-                }
-
-                ctx.progress.files_scanned.fetch_add(1, Ordering::Relaxed);
-                ctx.progress
-                    .bytes_scanned
-                    .fetch_add(size, Ordering::Relaxed);
-
-                Some(FileNode::new_file(&file_name, size))
             }
-        })
-        .collect();
+
+            if let Some(bucket) = parent_bucket {
+                bucket.size.fetch_add(size, Ordering::Relaxed);
+            }
+
+            ctx.progress.files_scanned.fetch_add(1, Ordering::Relaxed);
+            ctx.progress
+                .bytes_scanned
+                .fetch_add(size, Ordering::Relaxed);
+
+            Some(FileNode::new_file(&file_name, size))
+        }
+    };
+
+    let children: Vec<FileNode> = if depth <= 2 {
+        entries.into_par_iter().filter_map(process_entry).collect()
+    } else {
+        entries.into_iter().filter_map(process_entry).collect()
+    };
 
     node.children = children;
     node

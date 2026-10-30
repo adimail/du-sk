@@ -1,46 +1,7 @@
+use du_sk_core::{get_preset_locations, PresetLocation};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
-
-pub struct Preset {
-    pub key: &'static str,
-    pub label: &'static str,
-    pub path: PathBuf,
-}
-
-pub fn get_presets() -> Vec<Preset> {
-    let home = env::var("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("."));
-
-    vec![
-        Preset {
-            key: "home",
-            label: "Home Directory (~)",
-            path: home.clone(),
-        },
-        Preset {
-            key: "library",
-            label: "Library (~/Library)",
-            path: home.join("Library"),
-        },
-        Preset {
-            key: "downloads",
-            label: "Downloads (~/Downloads)",
-            path: home.join("Downloads"),
-        },
-        Preset {
-            key: "documents",
-            label: "Documents (~/Documents)",
-            path: home.join("Documents"),
-        },
-        Preset {
-            key: "desktop",
-            label: "Desktop (~/Desktop)",
-            path: home.join("Desktop"),
-        },
-    ]
-}
 
 pub struct CliArgs {
     pub target_path: PathBuf,
@@ -48,7 +9,7 @@ pub struct CliArgs {
     pub top_limit: usize,
 }
 
-fn print_help(presets: &[Preset]) {
+fn print_help(presets: &[PresetLocation]) {
     println!("\x1b[1;38;5;208mdu-sk-cli\x1b[0m - Fast terminal disk space inspector\n");
     println!("\x1b[1;37mUSAGE:\x1b[0m");
     println!("  du-sk-cli [TARGET | PRESET] [-s <QUERY>] [-n <N>]\n");
@@ -69,7 +30,7 @@ fn print_help(presets: &[Preset]) {
     println!("  \x1b[38;5;208m-h, --help\x1b[0m            Show help information\n");
 }
 
-fn print_presets(presets: &[Preset]) {
+fn print_presets(presets: &[PresetLocation]) {
     println!("\x1b[1;37mAvailable Presets:\x1b[0m\n");
     for p in presets {
         println!(
@@ -83,7 +44,7 @@ fn print_presets(presets: &[Preset]) {
 }
 
 pub fn parse_args() -> Result<Option<CliArgs>, String> {
-    let presets = get_presets();
+    let presets = get_preset_locations();
     let args: Vec<String> = env::args().skip(1).collect();
 
     let mut target_str: Option<String> = None;

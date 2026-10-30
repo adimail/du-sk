@@ -1,12 +1,11 @@
 use crate::state::AppState;
 use du_sk_core::{
     FolderViewResponse, LiveBucketSnapshot, ScanProgress, SearchIndex, SearchResultItem,
-    scan_directory,
+    get_preset_locations, scan_directory,
 };
 use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::thread;
@@ -47,50 +46,13 @@ pub fn get_default_target() -> String {
 
 #[tauri::command]
 pub fn get_folder_presets() -> Vec<FolderPreset> {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    let home_path = PathBuf::from(&home);
-    vec![
-        FolderPreset {
-            label: "Home (~)".into(),
-            path: home_path.to_string_lossy().to_string(),
-        },
-        FolderPreset {
-            label: "Library".into(),
-            path: home_path.join("Library").to_string_lossy().to_string(),
-        },
-        FolderPreset {
-            label: "Downloads".into(),
-            path: home_path.join("Downloads").to_string_lossy().to_string(),
-        },
-        FolderPreset {
-            label: "Documents".into(),
-            path: home_path.join("Documents").to_string_lossy().to_string(),
-        },
-        FolderPreset {
-            label: "Desktop".into(),
-            path: home_path.join("Desktop").to_string_lossy().to_string(),
-        },
-    ]
-}
-
-#[tauri::command]
-pub fn pick_folder() -> Result<Option<String>, String> {
-    let output = Command::new("osascript")
-        .arg("-e")
-        .arg("POSIX path of (choose folder with prompt \"Select folder to scan:\")")
-        .output()
-        .map_err(|e| e.to_string())?;
-
-    if output.status.success() {
-        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if path.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(path))
-        }
-    } else {
-        Ok(None)
-    }
+    get_preset_locations()
+        .into_iter()
+        .map(|p| FolderPreset {
+            label: p.label.to_string(),
+            path: p.path.to_string_lossy().to_string(),
+        })
+        .collect()
 }
 
 #[tauri::command]
@@ -207,7 +169,7 @@ pub fn start_scan(
                 let root_name = result.root_node.name.to_string();
                 let root_view = result.root_node.to_folder_view(vec![root_name]);
                 let scanned_path = target.to_string_lossy().to_string();
-                let index = Arc::new(SearchIndex::build(&result.root_node));
+                let index = Arc::new(SearchIndex::build(&result.root_node, &scanned_path));
 
                 let complete_payload = ScanCompletePayload {
                     total_bytes: result.total_bytes,
@@ -291,7 +253,11 @@ pub async fn search_folder(
     let max_results = limit.unwrap_or(50);
 
     let outcome = tauri::async_runtime::spawn_blocking(move || {
-        index.search(&path_segments, &trimmed, max_results, &latest, request_id)
+        let results = index.search(&path_segments, &trimmed, max_results, &latest, request_id);
+        if latest.load(Ordering::Relaxed) != request_id {
+            return None;
+        }
+        results
     })
     .await
     .map_err(|e| e.to_string())?;

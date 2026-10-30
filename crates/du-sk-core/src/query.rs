@@ -25,6 +25,7 @@ pub struct SearchResultItem {
     pub name: String,
     pub path_segments: Vec<String>,
     pub relative_path: String,
+    pub absolute_path: String,
     pub size: u64,
     pub is_dir: bool,
 }

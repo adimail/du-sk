@@ -117,7 +117,7 @@ fn test_relative_paths() {
 #[test]
 fn test_index_resolves_nested_base_path() {
     let root = build_fixture_tree();
-    let index = SearchIndex::build(&root);
+    let index = SearchIndex::build(&root, "/tmp/root");
     let latest = AtomicU64::new(1);
     let base = vec!["root".to_string(), "Documents".to_string()];
 
@@ -132,7 +132,7 @@ fn test_index_resolves_nested_base_path() {
 #[test]
 fn test_stale_request_is_cancelled() {
     let root = build_fixture_tree();
-    let index = SearchIndex::build(&root);
+    let index = SearchIndex::build(&root, "/tmp/root");
     let latest = AtomicU64::new(2);
     let base = vec!["root".to_string()];
 
@@ -168,7 +168,7 @@ fn test_benchmark_large_tree_traversal() {
 
     root.roll_up_sizes();
 
-    let index = SearchIndex::build(&root);
+    let index = SearchIndex::build(&root, "/tmp/benchmark_root");
     let latest = AtomicU64::new(1);
     let base = vec!["benchmark_root".to_string()];
 

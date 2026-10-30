@@ -3,6 +3,7 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { Header } from "./components/Header";
 import { Treemap } from "./components/Treemap";
 import { useFolderScan } from "./hooks/useFolderScan";
+import { SearchResultItem } from "./types";
 import "./App.css";
 
 function App() {
@@ -20,7 +21,6 @@ function App() {
     activeTiles,
     activeTotal,
     currentDirectoryPath,
-    scannedRootPath,
   } = useFolderScan(currentTargetPath);
 
   function handleSelectPath(path: string) {
@@ -38,18 +38,12 @@ function App() {
     }
   }
 
-  async function handleRevealItem(segments: string[]) {
-    const base = scannedRootPath || currentTargetPath;
-    if (!base || segments.length === 0) return;
-
-    const relSegments = segments.length > 1 ? segments.slice(1) : [];
-    const fullPath = `${base.replace(/\/+$/, "")}/${relSegments.join("/")}`;
-
+  async function handleRevealItem(item: SearchResultItem) {
     try {
-      await revealItemInDir(fullPath);
+      await revealItemInDir(item.absolute_path);
     } catch {
-      if (segments.length > 1) {
-        navigateToSegments(segments.slice(0, -1));
+      if (item.path_segments.length > 1) {
+        navigateToSegments(item.path_segments.slice(0, -1));
       }
     }
   }

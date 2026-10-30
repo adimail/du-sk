@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import { formatBytes } from "../lib/utils";
-import { FolderPreset, ScanState } from "../types";
+import { FolderPreset, SearchResultItem, ScanState } from "../types";
 import { SearchBar } from "./SearchBar";
 
 interface HeaderProps {
@@ -11,7 +12,7 @@ interface HeaderProps {
   onSelectPath: (path: string) => void;
   onNavigateBreadcrumb: (index: number) => void;
   onNavigateSegments: (segments: string[]) => void;
-  onRevealItem?: (segments: string[]) => void;
+  onRevealItem?: (item: SearchResultItem) => void;
   onGoUp: () => void;
   onCancelScan: () => void;
   onRescan: () => void;
@@ -68,8 +69,12 @@ export const Header: React.FC<HeaderProps> = ({
   async function handlePickCustomFolder() {
     setDropdownOpen(false);
     try {
-      const chosen = await invoke<string | null>("pick_folder");
-      if (chosen) {
+      const chosen = await open({
+        directory: true,
+        multiple: false,
+        title: "Select folder to scan",
+      });
+      if (typeof chosen === "string") {
         onSelectPath(chosen);
       }
     } catch {}
@@ -248,5 +253,3 @@ export const Header: React.FC<HeaderProps> = ({
     </header>
   );
 };
-
-

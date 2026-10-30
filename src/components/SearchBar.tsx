@@ -7,7 +7,7 @@ interface SearchBarProps {
   currentPathSegments: string[];
   isScanning: boolean;
   onNavigateToSegments: (segments: string[]) => void;
-  onRevealItem?: (segments: string[]) => void;
+  onRevealItem?: (item: SearchResultItem) => void;
 }
 
 export const SearchBar: React.FC<SearchBarProps> = ({
@@ -85,11 +85,11 @@ export const SearchBar: React.FC<SearchBarProps> = ({
   const handleSelectResult = useCallback(
     (item: SearchResultItem, reveal: boolean) => {
       if (reveal && onRevealItem) {
-        onRevealItem(item.path_segments);
+        onRevealItem(item);
       } else if (item.is_dir) {
         onNavigateToSegments(item.path_segments);
       } else if (onRevealItem) {
-        onRevealItem(item.path_segments);
+        onRevealItem(item);
       } else if (item.path_segments.length > 1) {
         onNavigateToSegments(item.path_segments.slice(0, -1));
       }

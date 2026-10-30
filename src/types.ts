@@ -47,6 +47,7 @@ export interface SearchResultItem {
   name: string;
   path_segments: string[];
   relative_path: string;
+  absolute_path: string;
   size: number;
   is_dir: boolean;
 }
