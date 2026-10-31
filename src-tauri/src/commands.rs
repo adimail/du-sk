@@ -1,3 +1,4 @@
+use crate::recents::{self, RecentPath};
 use crate::state::AppState;
 use du_sk_core::{
     DiskSpace, FolderViewResponse, LiveBucketSnapshot, ScanProgress, SearchIndex, SearchResultItem,
@@ -57,6 +58,16 @@ pub fn get_folder_presets() -> Vec<FolderPreset> {
 }
 
 #[tauri::command]
+pub fn get_recent_paths(app: AppHandle) -> Vec<RecentPath> {
+    recents::load_recents(&app)
+}
+
+#[tauri::command]
+pub fn clear_recent_paths(app: AppHandle) -> Result<(), String> {
+    recents::clear_recents(&app)
+}
+
+#[tauri::command]
 pub fn cancel_scan(state: State<'_, AppState>) {
     state.cancel_token.store(true, Ordering::Relaxed);
     state.is_scanning.store(false, Ordering::Relaxed);
@@ -105,6 +116,8 @@ pub fn start_scan(
             target.display()
         ));
     }
+
+    recents::add_recent(&app, &target);
 
     state.cancel_token.store(false, Ordering::Relaxed);
     state.search_seq.fetch_add(1, Ordering::SeqCst);

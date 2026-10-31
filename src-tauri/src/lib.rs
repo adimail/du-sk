@@ -1,4 +1,5 @@
 mod commands;
+mod recents;
 mod state;
 
 use state::AppState;
@@ -12,6 +13,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_default_target,
             commands::get_folder_presets,
+            commands::get_recent_paths,
+            commands::clear_recent_paths,
             commands::start_scan,
             commands::cancel_scan,
             commands::get_folder_children,

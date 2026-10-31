@@ -52,6 +52,12 @@ export interface FolderPreset {
   path: string;
 }
 
+export interface RecentPath {
+  path: string;
+  label: string;
+  last_used: number;
+}
+
 export interface SearchResultItem {
   name: string;
   path_segments: string[];

@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { formatBytes } from "../lib/utils";
-import { FolderPreset, HoveredTileInfo, SearchResultItem, ScanState } from "../types";
+import { FolderPreset, HoveredTileInfo, RecentPath, SearchResultItem, ScanState } from "../types";
 import { SearchBar } from "./SearchBar";
 
 interface HeaderProps {
@@ -35,6 +35,7 @@ export const Header: React.FC<HeaderProps> = ({
   onRescan,
 }) => {
   const [presets, setPresets] = useState<FolderPreset[]>([]);
+  const [recentPaths, setRecentPaths] = useState<RecentPath[]>([]);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -42,11 +43,24 @@ export const Header: React.FC<HeaderProps> = ({
   const currentPath = scanState.view ? scanState.view.current_path : [];
   const subSegments = currentPath.length > 1 ? currentPath.slice(1) : [];
 
+  const refreshRecents = useCallback(() => {
+    invoke<RecentPath[]>("get_recent_paths")
+      .then(setRecentPaths)
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     invoke<FolderPreset[]>("get_folder_presets")
       .then(setPresets)
       .catch(() => {});
-  }, []);
+    refreshRecents();
+  }, [refreshRecents]);
+
+  useEffect(() => {
+    if (scanState.status === "complete") {
+      refreshRecents();
+    }
+  }, [scanState.status, refreshRecents]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -60,13 +74,17 @@ export const Header: React.FC<HeaderProps> = ({
 
   const rootLabel = useMemo(() => {
     if (currentTargetPath) {
-      const matched = presets.find((p) => p.path === currentTargetPath);
-      if (matched) return matched.label;
+      const presetMatched = presets.find((p) => p.path === currentTargetPath);
+      if (presetMatched) return presetMatched.label;
+
+      const recentMatched = recentPaths.find((r) => r.path === currentTargetPath);
+      if (recentMatched) return recentMatched.label;
+
       const parts = currentTargetPath.replace(/\/$/, "").split("/");
       return parts[parts.length - 1] || currentTargetPath;
     }
     return "Select Target…";
-  }, [currentTargetPath, presets]);
+  }, [currentTargetPath, presets, recentPaths]);
 
   async function handlePickCustomFolder() {
     setDropdownOpen(false);
@@ -79,6 +97,14 @@ export const Header: React.FC<HeaderProps> = ({
       if (typeof chosen === "string") {
         onSelectPath(chosen);
       }
+    } catch {}
+  }
+
+  async function handleClearRecents(e: React.MouseEvent) {
+    e.stopPropagation();
+    try {
+      await invoke("clear_recent_paths");
+      setRecentPaths([]);
     } catch {}
   }
 
@@ -159,7 +185,11 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
 
               {dropdownOpen && (
-                <div className="absolute top-full left-0 mt-2 z-50 bg-[#16161b] border border-white/10 rounded-xl p-1.5 min-w-[200px] shadow-2xl backdrop-blur-md">
+                <div className="absolute top-full left-0 mt-2 z-50 bg-[#16161b] border border-white/10 rounded-xl p-1.5 min-w-[220px] max-h-96 overflow-y-auto shadow-2xl backdrop-blur-md">
+                  <div className="px-2.5 py-1 text-[10px] text-zinc-500 font-medium tracking-wider uppercase select-none">
+                    Presets
+                  </div>
+
                   {presets.map((preset) => (
                     <button
                       key={preset.path}
@@ -178,7 +208,42 @@ export const Header: React.FC<HeaderProps> = ({
                     </button>
                   ))}
 
-                  <div className="h-px bg-white/10 my-1" />
+                  {recentPaths.length > 0 && (
+                    <>
+                      <div className="h-px bg-white/10 my-1.5" />
+                      <div className="px-2.5 py-1 flex items-center justify-between text-[10px] text-zinc-500 font-medium tracking-wider uppercase select-none">
+                        <span>Recents</span>
+                        <button
+                          type="button"
+                          onClick={handleClearRecents}
+                          className="text-[10px] text-zinc-500 hover:text-zinc-300 bg-transparent border-none cursor-pointer"
+                        >
+                          Clear
+                        </button>
+                      </div>
+
+                      {recentPaths.map((recent) => (
+                        <button
+                          key={recent.path}
+                          type="button"
+                          onClick={() => {
+                            setDropdownOpen(false);
+                            onSelectPath(recent.path);
+                          }}
+                          className={`w-full text-left border-none py-1.5 px-2.5 rounded-md text-xs cursor-pointer transition-colors flex flex-col ${
+                            currentTargetPath === recent.path
+                              ? "bg-orange-500/15 text-orange-400 font-medium"
+                              : "bg-transparent text-zinc-300 hover:bg-white/5"
+                          }`}
+                        >
+                          <span className="font-medium truncate">{recent.label}</span>
+                          <span className="text-[10px] text-zinc-500 truncate">{recent.path}</span>
+                        </button>
+                      ))}
+                    </>
+                  )}
+
+                  <div className="h-px bg-white/10 my-1.5" />
 
                   <button
                     type="button"

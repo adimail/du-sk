@@ -1,16 +1,14 @@
 use clap::Parser;
-use du_sk_core::{get_preset_locations, PresetLocation};
 use std::fs;
 use std::path::PathBuf;
 
 const EXAMPLES: &str = "Examples:
-  du-sk                                    Inspect home directory down to depth 2
+  du-sk                                    Inspect current directory down to depth 2
   du-sk ~/Library                          Inspect ~/Library
-  du-sk downloads -d 3                     Inspect downloads preset down to depth 3
+  du-sk . -d 3                             Inspect current directory down to depth 3
   du-sk ~ -d 3 -m 500M                     Filter items at least 500 MB up to depth 3
   du-sk /var/log -n 5                      Show top 5 items per directory in /var/log
-  du-sk ~ -s \"report.pdf\"                  Search for \"report.pdf\" in home directory
-  du-sk -p                                 List available preset shortcuts";
+  du-sk ~ -s \"report.pdf\"                  Search for \"report.pdf\" in home directory";
 
 #[derive(Parser, Debug)]
 #[command(
@@ -21,8 +19,8 @@ const EXAMPLES: &str = "Examples:
 )]
 pub struct CliArgs {
     #[arg(
-        value_name = "TARGET | PRESET",
-        help = "Target directory path or preset key (e.g. home, downloads, library)"
+        value_name = "TARGET",
+        help = "Target directory path (defaults to current directory)"
     )]
     pub target: Option<String>,
 
@@ -58,13 +56,6 @@ pub struct CliArgs {
         help = "Search for files and directories matching a query string"
     )]
     pub search: Option<String>,
-
-    #[arg(
-        short = 'p',
-        long = "presets",
-        help = "List available preset target shortcuts and exit"
-    )]
-    pub presets: bool,
 }
 
 fn validate_min_one(s: &str) -> Result<usize, String> {
@@ -126,22 +117,10 @@ pub fn parse_human_size(s: &str) -> Result<u64, String> {
 
 impl CliArgs {
     pub fn resolve_target_path(&self) -> Result<PathBuf, String> {
-        let presets = get_preset_locations();
         let raw_path = if let Some(ref target_input) = self.target {
-            if let Some(matched) = presets
-                .iter()
-                .find(|p| p.key.eq_ignore_ascii_case(target_input))
-            {
-                matched.path.clone()
-            } else {
-                PathBuf::from(target_input)
-            }
+            PathBuf::from(target_input)
         } else {
-            presets
-                .iter()
-                .find(|p| p.key == "home")
-                .map(|p| p.path.clone())
-                .unwrap_or_else(|| PathBuf::from("."))
+            PathBuf::from(".")
         };
 
         let target_path = match fs::canonicalize(&raw_path) {
@@ -163,19 +142,6 @@ impl CliArgs {
 
         Ok(target_path)
     }
-}
-
-pub fn print_presets(presets: &[PresetLocation]) {
-    println!("\x1b[1;37mAvailable Presets:\x1b[0m\n");
-    for p in presets {
-        println!(
-            "  \x1b[1;38;5;208m{:<10}\x1b[0m {:<22} \x1b[38;5;244m{}\x1b[0m",
-            p.key,
-            p.label,
-            p.path.display()
-        );
-    }
-    println!();
 }
 
 #[cfg(test)]

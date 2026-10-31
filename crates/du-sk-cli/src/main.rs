@@ -12,11 +12,6 @@ use std::time::{Duration, Instant};
 fn main() {
     let cli = args::CliArgs::parse();
 
-    if cli.presets {
-        args::print_presets(&du_sk_core::get_preset_locations());
-        return;
-    }
-
     let target_path = match cli.resolve_target_path() {
         Ok(path) => path,
         Err(err) => {
