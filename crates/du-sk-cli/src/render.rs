@@ -1,6 +1,6 @@
 use crate::format::{format_bytes, format_number, render_bar, render_tri_bar};
 use crate::terminal::get_terminal_width;
-use du_sk_core::{FileNode, ScanProgress, ScanResult, SearchResultItem};
+use du_sk_core::{FileNode, FolderCulprit, ScanProgress, ScanResult, SearchResultItem};
 use std::io::{self, Write};
 use std::path::Path;
 use std::sync::atomic::Ordering;
@@ -25,6 +25,23 @@ fn truncate_str(s: &str, max_chars: usize) -> String {
     } else {
         s.chars().take(max_chars).collect()
     }
+}
+
+fn truncate_middle(s: &str, max_chars: usize) -> String {
+    let char_count = s.chars().count();
+    if char_count <= max_chars {
+        return s.to_string();
+    }
+    if max_chars <= 3 {
+        return "…".to_string();
+    }
+    let side = (max_chars - 1) / 2;
+    let head: String = s.chars().take(side).collect();
+    let tail: String = s
+        .chars()
+        .skip(char_count - (max_chars - 1 - side))
+        .collect();
+    format!("{}…{}", head, tail)
 }
 
 fn pad_right(s: &str, width: usize) -> String {
@@ -102,14 +119,14 @@ pub fn print_summary_header(
 
     if cancelled {
         let tag = "┌─ du-sk (Cancelled — Partial Results) ";
-        let dashes = width.saturating_sub(tag.len() + 1);
+        let dashes = width.saturating_sub(tag.len() - 5);
         println!(
             "\x1b[1;38;5;208m┌─ du-sk \x1b[38;5;203m(Cancelled — Partial Results)\x1b[1;38;5;208m {}┐\x1b[0m",
             "─".repeat(dashes)
         );
     } else {
         let tag = "┌─ du-sk ";
-        let dashes = width.saturating_sub(tag.len() + 1);
+        let dashes = width.saturating_sub(tag.len() - 3);
         println!("\x1b[1;38;5;208m┌─ du-sk {}┐\x1b[0m", "─".repeat(dashes));
     }
 
@@ -139,8 +156,9 @@ pub fn print_summary_header(
         };
 
         let drive_str = format!(
-            "{} Total · {} Used · {}",
-            format_bytes(total_disk),
+            "{} Scanned ({:.1}%) · {} Used · {}",
+            format_bytes(total_size),
+            scanned_of_disk_pct,
             format_bytes(used_disk),
             free_label
         );
@@ -148,17 +166,6 @@ pub fn print_summary_header(
         println!(
             "\x1b[1;38;5;208m│\x1b[0m Drive:     \x1b[1;37m{}\x1b[0m \x1b[1;38;5;208m│\x1b[0m",
             drive_padded
-        );
-
-        let scanned_str = format!(
-            "{} ({:.1}% of Drive)",
-            format_bytes(total_size),
-            scanned_of_disk_pct
-        );
-        let scanned_padded = pad_right(&truncate_str(&scanned_str, content_w), content_w);
-        println!(
-            "\x1b[1;38;5;208m│\x1b[0m Scanned:   \x1b[1;38;5;208m{}\x1b[0m \x1b[1;38;5;208m│\x1b[0m",
-            scanned_padded
         );
 
         let scanned_ratio = if total_disk > 0 {
@@ -181,37 +188,67 @@ pub fn print_summary_header(
             bar,
             " ".repeat(usage_rem.saturating_sub(1))
         );
-
-        let summary_str = format!(
-            "Files: {} · Time: {:.2?} · Errors: {}",
-            format_number(total_files),
-            duration,
-            result.unreadable_paths.len()
-        );
-        let summary_padded = pad_right(&truncate_str(&summary_str, content_w), content_w);
-        println!(
-            "\x1b[1;38;5;208m│\x1b[0m Summary:   \x1b[38;5;244m{}\x1b[0m \x1b[1;38;5;208m│\x1b[0m",
-            summary_padded
-        );
     } else {
-        let line = format!(
-            "Total: {} · Files: {} · Time: {:.2?} · Errors: {}",
-            format_bytes(total_size),
-            format_number(total_files),
-            duration,
-            result.unreadable_paths.len()
-        );
-        let line_padded = pad_right(&truncate_str(&line, content_w), content_w);
+        let scanned_str = format!("{} Scanned", format_bytes(total_size));
+        let scanned_padded = pad_right(&truncate_str(&scanned_str, content_w), content_w);
         println!(
-            "\x1b[1;38;5;208m│\x1b[0m Summary:   \x1b[1;37m{}\x1b[0m \x1b[1;38;5;208m│\x1b[0m",
-            line_padded
+            "\x1b[1;38;5;208m│\x1b[0m Scanned:   \x1b[1;38;5;208m{}\x1b[0m \x1b[1;38;5;208m│\x1b[0m",
+            scanned_padded
         );
     }
+
+    let summary_str = format!(
+        "{} files · {:.2?} · {} errors",
+        format_number(total_files),
+        duration,
+        result.unreadable_paths.len()
+    );
+    let summary_padded = pad_right(&truncate_str(&summary_str, content_w), content_w);
+    println!(
+        "\x1b[1;38;5;208m│\x1b[0m Summary:   \x1b[38;5;244m{}\x1b[0m \x1b[1;38;5;208m│\x1b[0m",
+        summary_padded
+    );
 
     println!(
         "\x1b[1;38;5;208m└{}┘\x1b[0m\n",
         "─".repeat(width.saturating_sub(2))
     );
+}
+
+pub fn print_top_culprits(culprits: &[FolderCulprit]) {
+    if culprits.is_empty() {
+        return;
+    }
+
+    let width = get_terminal_width();
+    let divider = "─".repeat(width.saturating_sub(2));
+
+    println!(
+        " \x1b[1;38;5;208mTOP CULPRITS\x1b[0m \x1b[38;5;244m(Largest Folders Across Scanned Tree)\x1b[0m"
+    );
+    println!(" \x1b[38;5;238m{}\x1b[0m", divider);
+    println!(
+        " \x1b[38;5;240m{:<4}  {:>10}  {:>7}   PATH\x1b[0m",
+        "RANK", "SIZE", "SHARE"
+    );
+    println!(" \x1b[38;5;238m{}\x1b[0m", divider);
+
+    let avail_path_width = width.saturating_sub(30).max(15);
+
+    for (idx, culprit) in culprits.iter().enumerate() {
+        let rank_label = format!("#{}", idx + 1);
+        let path_display = truncate_middle(&culprit.relative_path, avail_path_width);
+
+        println!(
+            " \x1b[38;5;208m{:<4}\x1b[0m  \x1b[1;37m{:>10}\x1b[0m  \x1b[38;5;208m{:>6.1}%\x1b[0m   \x1b[38;5;252m{}\x1b[0m",
+            rank_label,
+            format_bytes(culprit.size),
+            culprit.percentage,
+            path_display
+        );
+    }
+
+    println!(" \x1b[38;5;238m{}\x1b[0m\n", divider);
 }
 
 pub fn print_search_results(query: &str, results: &[SearchResultItem], duration: Duration) {
@@ -370,6 +407,11 @@ pub fn print_tree_distribution(
     let bar_width = 16;
     let max_name_width = width.saturating_sub(52).max(20);
 
+    println!(
+        " \x1b[1;38;5;208mDIRECTORY BREAKDOWN\x1b[0m \x1b[38;5;244m(Depth {})\x1b[0m",
+        max_depth
+    );
+    println!(" \x1b[38;5;238m{}\x1b[0m", divider);
     println!(
         " \x1b[38;5;240m{:<6} {:>10}  {:>10}    {:<16}  NAME / PATH\x1b[0m",
         "KIND", "SIZE", "FILES", "DISTRIBUTION"

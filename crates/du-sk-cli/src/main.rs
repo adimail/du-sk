@@ -62,6 +62,21 @@ fn main() {
             let duration = start.elapsed();
             let fallback_bytes = progress.bytes_scanned.load(Ordering::Relaxed);
             let fallback_files = progress.files_scanned.load(Ordering::Relaxed);
+            let total_effective_bytes = if result.total_bytes > 0 {
+                result.total_bytes
+            } else {
+                fallback_bytes
+            };
+
+            let culprits = if !cli.no_culprits && cli.search.is_none() {
+                du_sk_core::find_top_culprits(
+                    &result.root_node,
+                    total_effective_bytes,
+                    cli.culprits_count,
+                )
+            } else {
+                Vec::new()
+            };
 
             render::print_summary_header(
                 &result,
@@ -88,6 +103,10 @@ fn main() {
 
                 render::print_search_results(query, &search_results, search_duration);
             } else {
+                if !cli.no_culprits {
+                    render::print_top_culprits(&culprits);
+                }
+
                 let target_display = target_path.display().to_string();
                 render::print_tree_distribution(
                     &result,

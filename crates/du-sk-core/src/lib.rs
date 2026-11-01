@@ -1,9 +1,11 @@
+pub mod culprits;
 pub mod index;
 pub mod node;
 pub mod presets;
 pub mod query;
 pub mod scan;
 
+pub use culprits::{find_top_culprits, FolderCulprit};
 pub use index::SearchIndex;
 pub use node::FileNode;
 pub use presets::{get_preset_locations, PresetLocation};

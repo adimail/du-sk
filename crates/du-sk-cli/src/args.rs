@@ -3,11 +3,13 @@ use std::fs;
 use std::path::PathBuf;
 
 const EXAMPLES: &str = "Examples:
-  du-sk                                    Inspect current directory down to depth 2
+  du-sk                                    Inspect current directory at depth 1 with top culprits
   du-sk ~/Library                          Inspect ~/Library
-  du-sk . -d 3                             Inspect current directory down to depth 3
-  du-sk ~ -d 3 -m 500M                     Filter items at least 500 MB up to depth 3
+  du-sk . -d 2                             Inspect current directory down to depth 2
+  du-sk ~ -m 500M                          Filter items at least 500 MB
   du-sk /var/log -n 5                      Show top 5 items per directory in /var/log
+  du-sk ~ --no-culprits                    Hide the top space-consuming folders table
+  du-sk ~ --culprits-count 10              Show top 10 space-consuming folders
   du-sk ~ -s \"report.pdf\"                  Search for \"report.pdf\" in home directory";
 
 #[derive(Parser, Debug)]
@@ -27,7 +29,7 @@ pub struct CliArgs {
     #[arg(
         short = 'd',
         long = "depth",
-        default_value_t = 2,
+        default_value_t = 1,
         value_parser = validate_min_one,
         help = "Maximum directory tree depth to display"
     )]
@@ -44,11 +46,26 @@ pub struct CliArgs {
     #[arg(
         short = 'n',
         long = "top",
-        default_value_t = 10,
+        default_value_t = 8,
         value_parser = validate_min_one,
         help = "Maximum number of items to display per branch"
     )]
     pub top: usize,
+
+    #[arg(
+        long = "no-culprits",
+        default_value_t = false,
+        help = "Do not show the largest space-consuming folders section"
+    )]
+    pub no_culprits: bool,
+
+    #[arg(
+        long = "culprits-count",
+        default_value_t = 5,
+        value_parser = validate_min_one,
+        help = "Number of top space-consuming folders to display"
+    )]
+    pub culprits_count: usize,
 
     #[arg(
         short = 's',
