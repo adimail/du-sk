@@ -68,7 +68,8 @@ fn main() {
                 fallback_bytes
             };
 
-            let culprits = if !cli.no_culprits && cli.search.is_none() {
+            let show_culprits = !cli.no_culprits && !cli.all && cli.search.is_none();
+            let culprits = if show_culprits {
                 du_sk_core::find_top_culprits(
                     &result.root_node,
                     total_effective_bytes,
@@ -103,17 +104,18 @@ fn main() {
 
                 render::print_search_results(query, &search_results, search_duration);
             } else {
-                if !cli.no_culprits {
+                if show_culprits {
                     render::print_top_culprits(&culprits);
                 }
 
                 let target_display = target_path.display().to_string();
+                let effective_top = if cli.all { usize::MAX } else { cli.top };
                 render::print_tree_distribution(
                     &result,
                     &target_display,
                     cli.depth,
                     cli.min_size.unwrap_or(0),
-                    cli.top,
+                    effective_top,
                     fallback_bytes,
                 );
             }

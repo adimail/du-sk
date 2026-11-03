@@ -6,6 +6,7 @@ const EXAMPLES: &str = "Examples:
   du-sk                                    Inspect current directory at depth 1 with top culprits
   du-sk ~/Library                          Inspect ~/Library
   du-sk . -d 2                             Inspect current directory down to depth 2
+  du-sk . -a                               List all files and directories at depth 1 without culprits
   du-sk ~ -m 500M                          Filter items at least 500 MB
   du-sk /var/log -n 5                      Show top 5 items per directory in /var/log
   du-sk ~ --no-culprits                    Hide the top space-consuming folders table
@@ -25,6 +26,14 @@ pub struct CliArgs {
         help = "Target directory path (defaults to current directory)"
     )]
     pub target: Option<String>,
+
+    #[arg(
+        short = 'a',
+        long = "all",
+        default_value_t = false,
+        help = "Display all files and directories without truncation or top culprits"
+    )]
+    pub all: bool,
 
     #[arg(
         short = 'd',
@@ -184,5 +193,16 @@ mod tests {
         assert!(parse_human_size("-50M").is_err());
         assert!(parse_human_size("abc").is_err());
         assert!(parse_human_size("12X").is_err());
+    }
+
+    #[test]
+    fn test_all_flag_parsing() {
+        let args = CliArgs::try_parse_from(["du-sk", "-a"]).unwrap();
+        assert!(args.all);
+        assert_eq!(args.depth, 1);
+
+        let args_explicit = CliArgs::try_parse_from(["du-sk", "-a", "-d", "3"]).unwrap();
+        assert!(args_explicit.all);
+        assert_eq!(args_explicit.depth, 3);
     }
 }
